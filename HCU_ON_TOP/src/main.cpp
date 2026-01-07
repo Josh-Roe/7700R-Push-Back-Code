@@ -18,7 +18,10 @@ pros::MotorGroup rightMotors({FRONT_RIGHT_DRIVEBASE, MID_RIGHT_DRIVEBASE,
 pros::Imu imu(IMU_SENSOR);
 pros::Rotation horizontalEnc(HORIZONTAL_ROTATION_ODOM);
 pros::Rotation verticalEnc(VERTICAL_ROTATION_ODOM);
-pros::Distance distance_sensor_hood(DISTANCE_SENSOR_HOOD);
+pros::Distance distance_sensor_left(DISTANCE_SENSOR_LEFT);
+pros::Distance distance_sensor_right(DISTANCE_SENSOR_RIGHT);
+pros::Distance distance_sensor_front(DISTANCE_SENSOR_FRONT);
+
 pros::Optical color_sensor_hood(COLOR_SENSOR_HOOD);
 
 // OTHER MOTORS SET UP

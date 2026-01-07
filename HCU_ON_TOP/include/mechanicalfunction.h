@@ -29,7 +29,7 @@ inline void applyScoringMode(ScoringMode mode) {
     switch (mode) {
         case ScoringMode::INTAKE:
             conveyor.move_voltage(12000);
-            hoodroller.move_voltage(4000);
+            hoodroller.move_voltage(3000);
             hood_piston.set_value(false);
             break;
 

@@ -10,7 +10,12 @@
 
 // --------------------- Public & internal params -------------------------
 
-inline void moveDistance(double inches, int timeout, double maxSpeed = 127) {
+inline void moveDistance(
+    double inches,
+    int timeout,
+    double maxSpeed = 127,
+    double minSpeed = 5.0   // NEW: minimum commanded speed
+) {
     const double kP = MOVE_DISTANCE_P;
     const double kD = LATERAL_KD;
 
@@ -22,8 +27,7 @@ inline void moveDistance(double inches, int timeout, double maxSpeed = 127) {
     const double DEG_TO_RAD = M_PI / 180.0;
     double theta0Rad = start.theta * DEG_TO_RAD;
 
-
-    // LemLib frame: heading 0° = +Y, so forward = (sinθ, cosθ)
+    // LemLib frame: heading 0° = +Y
     double forwardX = std::sin(theta0Rad);
     double forwardY = std::cos(theta0Rad);
 
@@ -45,29 +49,31 @@ inline void moveDistance(double inches, int timeout, double maxSpeed = 127) {
 
         // small-error timeout
         if (std::fabs(error) < tolerance) {
-            if (withinSmallErrorStart == 0) withinSmallErrorStart = pros::millis();
-            if (pros::millis() - withinSmallErrorStart >= (uint32_t)smallErrorTimeout) break;
+            if (withinSmallErrorStart == 0)
+                withinSmallErrorStart = pros::millis();
+            if (pros::millis() - withinSmallErrorStart >=
+                static_cast<uint32_t>(smallErrorTimeout))
+                break;
         } else {
             withinSmallErrorStart = 0;
         }
 
-        // PD controller with discrete derivative
+        // PD controller
         double derivative = 0.0;
         if (std::fabs(error) > tolerance * 2.0) {
-            double errorDelta = error - prevError;
-            derivative = errorDelta;   // dt baked into kD
+            derivative = error - prevError; // dt baked into kD
         }
         prevError = error;
 
         output = kP * error + kD * derivative;
 
-        // clamp
+        // clamp to max
         if (output > maxSpeed) output = maxSpeed;
         if (output < -maxSpeed) output = -maxSpeed;
 
-        const double minMove = 5.0;
-        if (std::fabs(output) < minMove && std::fabs(error) > tolerance) {
-            output = (output >= 0 ? 1 : -1) * minMove;
+        // enforce minimum speed (only if we're not basically done)
+        if (std::fabs(output) < minSpeed && std::fabs(error) > tolerance) {
+            output = (output >= 0 ? minSpeed : -minSpeed);
         }
 
         chassis.tank((int)output, (int)output, true);
@@ -76,6 +82,7 @@ inline void moveDistance(double inches, int timeout, double maxSpeed = 127) {
 
     chassis.tank(0, 0, true);
 }
+
 
 inline pros::Task* imuFixTask = nullptr;
 
@@ -243,6 +250,73 @@ inline bool runOdomCalibrationTrial(double targetDeg,
 // ========================================================================
 // ODOMETRY GEOMETRY CALIBRATION
 // ========================================================================
+
+inline void resetOnPark(){
+      chassis.setPose({float(72-distance_sensor_left.get() / 25.4f - 5.5), float(-72+(distance_sensor_front.get() / 25.4f) + 0.5), 180});
+        pros::lcd::print(5, "X: %.2f Y: %.2f", chassis.getPose().x, chassis.getPose().y);
+}
+
+
+inline float normalizeDeg180(float deg) {
+    while (deg > 180.0f) deg -= 360.0f;
+    while (deg <= -180.0f) deg += 360.0f;
+    return deg;
+}
+
+inline bool near(float a, float target, float tolDeg = 3.0f) {
+    return fabsf(a - target) <= tolDeg;
+}
+
+inline void distanceResetGoal() {
+    // Field walls in your coordinate system
+    constexpr float X_WALL_POS =  72.0f; // right wall
+    constexpr float X_WALL_NEG = -72.0f; // left wall
+    constexpr float Y_WALL_POS =  72.0f; // top wall
+
+    // Your physical offsets (inches) — keep these the same ones you tuned
+    // xOffset affects X computed from FRONT sensor
+    // yOffset affects Y computed from LEFT/RIGHT sensor
+    const float xOffset = 0.5f;
+    const float yOffset = 5.5f;
+
+    float theta = normalizeDeg180(chassis.getPose().theta);
+
+    // Distances in inches
+    const float dFront = distance_sensor_front.get() / 25.4f;
+    const float dLeft  = distance_sensor_left.get()  / 25.4f;
+    const float dRight = distance_sensor_right.get() / 25.4f;
+
+    auto pose = chassis.getPose();
+
+    // Optional sanity check
+    if (!(fabsf(pose.x) <= 80 && fabsf(pose.y) <= 80)) return;
+
+    // ---------------- θ ≈ +90 : ( +29, ±48, +90 ) ----------------
+    // front -> right wall (x=+72)
+    // left  -> top wall   (y=+72)
+    if (near(theta, 90.0f)) {
+        const float newX = (X_WALL_POS - dFront) + xOffset;
+        const float newY = (Y_WALL_POS - dLeft ) - yOffset;
+        chassis.setPose({newX, newY, theta});
+        return;
+    }
+
+    // ---------------- θ ≈ -90 : ( -29, ±48, -90 ) ----------------
+    // front -> left wall (x=-72)
+    // right -> top wall  (y=+72)
+    if (near(theta, -90.0f)) {
+        const float newX = (X_WALL_NEG + dFront) - xOffset;
+        const float newY = (Y_WALL_POS - dRight) - yOffset;
+        chassis.setPose({newX, newY, theta});
+        return;
+    }
+
+    // If you ever get here, you're not in one of your allowed headings.
+}
+
+
+
+
 inline void calibrateOdomGeometry() {
     constexpr double TARGET_ROTATION_DEG = 720.0;  // two full spins
     constexpr int    NUM_TRIALS          = 4;      // e.g. +720, -720, +720, -720
