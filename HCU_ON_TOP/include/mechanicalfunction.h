@@ -5,9 +5,10 @@
 
 // toggle state flags
 inline bool wingd = false;
-inline bool parkd = false;
-inline bool parkclampd = false;
 inline bool scrapd = false;
+inline bool gateBd = true;
+inline bool gateTd = false;
+inline bool midDescored = false;
 
 // ==== SCORING MODE STATE ====
 
@@ -28,34 +29,39 @@ inline ScoringMode requestedMode = ScoringMode::NONE;
 inline void applyScoringMode(ScoringMode mode) {
     switch (mode) {
         case ScoringMode::INTAKE:
-            conveyor.move_voltage(12000);
-            hoodroller.move_voltage(3000);
-            hood_piston.set_value(false);
+            conveyorR.move_voltage(12000);
+            conveyorL.move_voltage(12000);
+            gateT.set_value(false);
+            gateB.set_value(true);
             break;
 
         case ScoringMode::OUTTAKE:
-            conveyor.move_voltage(-12000);
-            hoodroller.move_voltage(-12000);
-            hood_piston.set_value(false);
+            conveyorR.move_voltage(-12000);
+            conveyorL.move_voltage(-12000);
+            gateT.set_value(false);
+            gateB.set_value(true);
             break;
 
         case ScoringMode::TOP:
-            conveyor.move_voltage(12000);
-            hoodroller.move_voltage(12000);
-            hood_piston.set_value(true);
+            conveyorR.move_voltage(12000);
+            conveyorL.move_voltage(12000);
+            gateT.set_value(true);
+            gateB.set_value(true);
             break;
 
         case ScoringMode::MIDDLE:
-            conveyor.move_voltage(12000);
-            hoodroller.move_voltage(-4000);
-            hood_piston.set_value(false);
+            conveyorR.move_voltage(12000);
+            conveyorL.move_voltage(12000);
+            gateT.set_value(false);
+            gateB.set_value(false);
             break;
 
         case ScoringMode::NONE:
         default:
-            conveyor.move_voltage(0);
-            hoodroller.move_voltage(0);
-            hood_piston.set_value(false);
+            conveyorR.move_voltage(0);
+            conveyorL.move_voltage(0);
+            gateT.set_value(false);
+            gateB.set_value(true);
             break;
     }
 }
@@ -88,10 +94,10 @@ inline void scoring_task(void* /*param*/) {
     while (true) {
         // --- MEASURE LOAD ---
         // If you really want voltage, replace get_current_draw() with get_voltage()
-        int convCurrent = conveyor.get_current_draw();   // mA
-        int hoodCurrent = hoodroller.get_current_draw(); // mA
+        int convRCurrent = conveyorR.get_current_draw();   // mA
+        int convLCurrent = conveyorL.get_current_draw(); // mA
 
-        bool jamNow = (convCurrent > JAM_CURRENT_MA) || (hoodCurrent > JAM_CURRENT_MA);
+        bool jamNow = (convRCurrent > JAM_CURRENT_MA) || (convLCurrent > JAM_CURRENT_MA);
 
         switch (jamState) {
             case JamState::IDLE: {
@@ -106,8 +112,8 @@ inline void scoring_task(void* /*param*/) {
                         jamState   = JamState::OUTTAKING;
                         stateStart = pros::millis();
 
-                        conveyor.move_voltage(-12000);
-                        hoodroller.move_voltage(-12000);
+                        conveyorR.move_voltage(-12000);
+                        conveyorL.move_voltage(-12000);
                     }
                 } else {
                     jamStart = 0;
@@ -121,8 +127,8 @@ inline void scoring_task(void* /*param*/) {
                     jamState   = JamState::INTAKING;
                     stateStart = pros::millis();
 
-                    conveyor.move_voltage(12000);
-                    hoodroller.move_voltage(12000);
+                    conveyorL.move_voltage(12000);
+                    conveyorR.move_voltage(12000);
                 }
                 break;
             }
@@ -154,17 +160,13 @@ inline void wing_tog() {
     wing.set_value(wingd);
 }
 
-inline void park_tog() {
-    parkd = !parkd;
-    park.set_value(parkd);
-}
-
-inline void parkclamp_tog() {
-    parkclampd = !parkclampd;
-    parkclamp.set_value(parkclampd);
-}
 
 inline void scraper_tog() {
     scrapd = !scrapd;
     scraper.set_value(scrapd);
+}
+
+inline void midgoal_tog() {
+    midDescored = !midDescored;
+    midDescore.set_value(midDescored);
 }

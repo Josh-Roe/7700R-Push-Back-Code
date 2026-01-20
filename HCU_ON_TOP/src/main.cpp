@@ -20,21 +20,19 @@ pros::Rotation horizontalEnc(HORIZONTAL_ROTATION_ODOM);
 pros::Rotation verticalEnc(VERTICAL_ROTATION_ODOM);
 pros::Distance distance_sensor_left(DISTANCE_SENSOR_LEFT);
 pros::Distance distance_sensor_right(DISTANCE_SENSOR_RIGHT);
-pros::Distance distance_sensor_front(DISTANCE_SENSOR_FRONT);
-
-pros::Optical color_sensor_hood(COLOR_SENSOR_HOOD);
+pros::Distance distance_sensor_back(DISTANCE_SENSOR_BACK);
 
 // OTHER MOTORS SET UP
-pros::Motor conveyor(CONVEYOR_MOTOR, pros::MotorGearset::blue,
+pros::Motor conveyorL(CONVEYOR_MOTOR_L, pros::MotorGearset::blue,
                      pros::v5::MotorUnits::degrees);
-pros::Motor hoodroller(HOOD_ROLLER_MOTOR, pros::MotorGearset::blue,
+pros::Motor conveyorR(CONVEYOR_MOTOR_R, pros::MotorGearset::blue,
                        pros::v5::MotorUnits::degrees);
 
 pros::adi::DigitalOut wing(WING);
 pros::adi::DigitalOut scraper(SCRAPER);
-pros::adi::DigitalOut parkclamp(PARKCLAMP);
-pros::adi::DigitalOut park(PARK);
-pros::adi::DigitalOut hood_piston(HOODPISTON);
+pros::adi::DigitalOut gateB(GATEB);
+pros::adi::DigitalOut gateT(GATET);
+pros::adi::DigitalOut midDescore(MID_DESCORE);
 
 // TRACKING WHEEL OFFSETS
 lemlib::TrackingWheel horizontal(&horizontalEnc, lemlib::Omniwheel::NEW_2,
@@ -122,8 +120,8 @@ void initialize() {
   pros::lcd::initialize();
   chassis.calibrate();
   chassis.setPose({0, 0, 0});
-  hoodroller.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
-  conveyor.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+  conveyorL.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+  conveyorR.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
   start_scoring_task();
   setScoringMode("NONE");
   // SCREEN DISPLAY

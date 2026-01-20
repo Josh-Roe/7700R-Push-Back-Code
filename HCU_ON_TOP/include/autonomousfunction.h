@@ -93,7 +93,7 @@ inline void fixIMURotation() {
     float initTheta = chassis.getPose().theta;
 
     while (true) {
-        theta = imu.get_rotation() * 1.01123595506 + initTheta;
+        theta = imu.get_rotation() * IMU_SCALE + initTheta;
         chassis.setPose({chassis.getPose().x, chassis.getPose().y, theta});
         pros::delay(10);
     }
@@ -252,7 +252,7 @@ inline bool runOdomCalibrationTrial(double targetDeg,
 // ========================================================================
 
 inline void resetOnPark(){
-      chassis.setPose({float(72-distance_sensor_left.get() / 25.4f - 5.5), float(-72+(distance_sensor_front.get() / 25.4f) + 0.5), 180});
+      chassis.setPose({float(72-distance_sensor_left.get() / 25.4f - 5.5), float(72-(distance_sensor_back.get() / 25.4f) + 0.5), 180});
         pros::lcd::print(5, "X: %.2f Y: %.2f", chassis.getPose().x, chassis.getPose().y);
 }
 
@@ -282,7 +282,7 @@ inline void distanceResetGoal() {
     float theta = normalizeDeg180(chassis.getPose().theta);
 
     // Distances in inches
-    const float dFront = distance_sensor_front.get() / 25.4f;
+    const float dback = distance_sensor_back.get() / 25.4f;
     const float dLeft  = distance_sensor_left.get()  / 25.4f;
     const float dRight = distance_sensor_right.get() / 25.4f;
 
@@ -295,7 +295,7 @@ inline void distanceResetGoal() {
     // front -> right wall (x=+72)
     // left  -> top wall   (y=+72)
     if (near(theta, 90.0f)) {
-        const float newX = (X_WALL_POS - dFront) + xOffset;
+        const float newX = (X_WALL_POS + dback) + xOffset;
         const float newY = (Y_WALL_POS - dLeft ) - yOffset;
         chassis.setPose({newX, newY, theta});
         return;
@@ -305,7 +305,7 @@ inline void distanceResetGoal() {
     // front -> left wall (x=-72)
     // right -> top wall  (y=+72)
     if (near(theta, -90.0f)) {
-        const float newX = (X_WALL_NEG + dFront) - xOffset;
+        const float newX = (X_WALL_NEG - dback) - xOffset;
         const float newY = (Y_WALL_POS - dRight) - yOffset;
         chassis.setPose({newX, newY, theta});
         return;

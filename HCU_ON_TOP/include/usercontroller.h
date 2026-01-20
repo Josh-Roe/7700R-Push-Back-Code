@@ -4,9 +4,7 @@
 #include "autonomousfunction.h"
 
 inline bool wingFlag = true;
-inline bool parkFlag = true;
-inline bool parkclampFlag = true;
-inline bool colorFlag = true;
+inline bool midDescoreFlag = true;
 
 inline void usercontrol() {
   startIMURotationTask();
@@ -54,21 +52,12 @@ inline void usercontrol() {
       wingFlag = true;
     }
 
-    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B) && parkFlag) {
-      park_tog();
-      parkFlag = false;
-    } else if (!controller.get_digital(pros::E_CONTROLLER_DIGITAL_B) &&
-               !parkFlag) {
-      parkFlag = true;
-    }
-
-    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN) &&
-        parkclampFlag) {
-      parkclamp_tog();
-      parkclampFlag = false;
+    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN) && midDescoreFlag) {
+      midgoal_tog();
+      midDescoreFlag = false;
     } else if (!controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN) &&
-               !parkclampFlag) {
-      parkclampFlag = true;
+               !midDescoreFlag) {
+      midDescoreFlag = true;
     }
 
     pros::delay(10);
