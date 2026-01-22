@@ -21,7 +21,6 @@ enum class ScoringMode {
 };
 
 // What the driver wants the system to do right now.
-// The task will read this and actually drive the motors.
 inline ScoringMode requestedMode = ScoringMode::NONE;
 
 
@@ -50,8 +49,8 @@ inline void applyScoringMode(ScoringMode mode) {
             break;
 
         case ScoringMode::MIDDLE:
-            conveyorR.move_voltage(12000);
-            conveyorL.move_voltage(12000);
+            conveyorR.move_voltage(10000);
+            conveyorL.move_voltage(10000);
             gateT.set_value(false);
             gateB.set_value(false);
             break;
@@ -81,9 +80,8 @@ inline void setScoringMode(const std::string& mode) {
     }
 }
 
-// ==== JAM HANDLER TASK ====
+// ==== SCORING + JAM HANDLER TASK ====
 // Runs in the background and automatically unjams
-
 inline void scoring_task(void* /*param*/) {
     enum class JamState { IDLE, OUTTAKING, INTAKING };
     JamState jamState = JamState::IDLE;
@@ -91,24 +89,73 @@ inline void scoring_task(void* /*param*/) {
     uint32_t stateStart = pros::millis();
     uint32_t jamStart   = 0;
 
+    // -------- TOP DELAY SEQUENCER (Gate opens first, rollers later) --------
+    constexpr uint32_t TOP_ROLLER_DELAY_MS = 100;
+
+    ScoringMode lastRequested = ScoringMode::NONE;
+    bool topDelayActive = false;
+    uint32_t topDelayStart = 0;
+    // ----------------------------------------------------------------------
+
     while (true) {
         // --- MEASURE LOAD ---
-        // If you really want voltage, replace get_current_draw() with get_voltage()
-        int convRCurrent = conveyorR.get_current_draw();   // mA
+        int convRCurrent = conveyorR.get_current_draw(); // mA
         int convLCurrent = conveyorL.get_current_draw(); // mA
 
-        bool jamNow = (convRCurrent > JAM_CURRENT_MA) || (convLCurrent > JAM_CURRENT_MA);
+        // Optional: prevent jam-detect during the TOP delay window
+        bool allowJamDetect = !topDelayActive;
+
+        bool jamNow = allowJamDetect &&
+                      ((convRCurrent > JAM_CURRENT_MA) || (convLCurrent > JAM_CURRENT_MA));
 
         switch (jamState) {
             case JamState::IDLE: {
-                // Normal: follow requestedMode
-                applyScoringMode(requestedMode);
+                // Detect a new driver request
+                if (requestedMode != lastRequested) {
+                    lastRequested = requestedMode;
 
-                // look for a sustained spike
+                    if (requestedMode == ScoringMode::TOP) {
+                        // Start TOP sequence: open gate NOW, rollers after 100ms
+                        topDelayActive = true;
+                        topDelayStart  = pros::millis();
+
+                        // Gate opens immediately
+                        gateT.set_value(true);
+                        gateB.set_value(true);
+
+                        // Rollers OFF during delay
+                        conveyorR.move_voltage(0);
+                        conveyorL.move_voltage(0);
+                    } else {
+                        // Any other mode cancels TOP delay
+                        topDelayActive = false;
+                    }
+                }
+
+                if (topDelayActive) {
+                    // While waiting: keep gate open, keep rollers off
+                    gateT.set_value(true);
+                    gateB.set_value(true);
+                    conveyorR.move_voltage(0);
+                    conveyorL.move_voltage(0);
+
+                    // After delay: start rollers, then we can exit the sequence
+                    if (pros::millis() - topDelayStart >= TOP_ROLLER_DELAY_MS) {
+                        topDelayActive = false;
+
+                        // Now run actual TOP behavior (rollers on + gates open)
+                        // (You can call applyScoringMode(TOP) or set directly)
+                        applyScoringMode(ScoringMode::TOP);
+                    }
+                } else {
+                    // Normal: follow requestedMode
+                    applyScoringMode(requestedMode);
+                }
+
+                // ---- Jam detection (sustained spike) ----
                 if (jamNow) {
                     if (jamStart == 0) jamStart = pros::millis();
                     if (pros::millis() - jamStart >= JAM_DETECT_MS) {
-                        // jam confirmed → go to OUTTAKING
                         jamState   = JamState::OUTTAKING;
                         stateStart = pros::millis();
 
@@ -118,11 +165,11 @@ inline void scoring_task(void* /*param*/) {
                 } else {
                     jamStart = 0;
                 }
+
                 break;
             }
 
             case JamState::OUTTAKING: {
-                // Outtake for a short time
                 if (pros::millis() - stateStart >= UNJAM_OUTTAKE_MS) {
                     jamState   = JamState::INTAKING;
                     stateStart = pros::millis();
@@ -134,19 +181,18 @@ inline void scoring_task(void* /*param*/) {
             }
 
             case JamState::INTAKING: {
-                // Intake again, then go back to normal requested mode
                 if (pros::millis() - stateStart >= UNJAM_INTAKE_MS) {
                     jamState = JamState::IDLE;
                     jamStart = 0;
-                    // next loop iteration, IDLE will re-apply requestedMode
                 }
                 break;
             }
         }
 
-        pros::delay(10); // run ~100 Hz, doesn't block other tasks
+        pros::delay(10);
     }
 }
+
 
 // Call this ONCE from initialize() or at the start of opcontrol()
 inline void start_scoring_task() {
@@ -160,7 +206,6 @@ inline void wing_tog() {
     wing.set_value(wingd);
 }
 
-
 inline void scraper_tog() {
     scrapd = !scrapd;
     scraper.set_value(scrapd);
@@ -170,3 +215,4 @@ inline void midgoal_tog() {
     midDescored = !midDescored;
     midDescore.set_value(midDescored);
 }
+

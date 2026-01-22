@@ -86,7 +86,7 @@ inline void moveDistance(
 
 inline pros::Task* imuFixTask = nullptr;
 
-inline void fixIMURotation() {
+inline void fixPose() {
     float theta = imu.get_rotation();
     chassis.setPose({chassis.getPose().x, chassis.getPose().y, theta + chassis.getPose().theta});
 
@@ -99,10 +99,10 @@ inline void fixIMURotation() {
     }
 }
 
-inline void startIMURotationTask() {
+inline void startFixPoseTask() {
     if (imuFixTask == nullptr) {
         imuFixTask = new pros::Task([](){
-            fixIMURotation();
+            fixPose();
         });
     }
 }
@@ -252,7 +252,7 @@ inline bool runOdomCalibrationTrial(double targetDeg,
 // ========================================================================
 
 inline void resetOnPark(){
-      chassis.setPose({float(72-distance_sensor_left.get() / 25.4f - 5.5), float(72-(distance_sensor_back.get() / 25.4f) + 0.5), 180});
+      chassis.setPose({float(72-distance_sensor_back.get() / 25.4f - 3.5), float(-72+(distance_sensor_left.get() / 25.4f) + 4), chassis.getPose().theta});
         pros::lcd::print(5, "X: %.2f Y: %.2f", chassis.getPose().x, chassis.getPose().y);
 }
 

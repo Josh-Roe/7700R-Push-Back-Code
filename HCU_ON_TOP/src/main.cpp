@@ -35,9 +35,9 @@ pros::adi::DigitalOut gateT(GATET);
 pros::adi::DigitalOut midDescore(MID_DESCORE);
 
 // TRACKING WHEEL OFFSETS
-lemlib::TrackingWheel horizontal(&horizontalEnc, lemlib::Omniwheel::NEW_2,
+lemlib::TrackingWheel horizontal(&horizontalEnc, lemlib::Omniwheel::NEW_2 * H_POD_SCALE,
                                  HORIZONTAL_ODOM_OFFSET);
-lemlib::TrackingWheel vertical(&verticalEnc, lemlib::Omniwheel::NEW_2,
+lemlib::TrackingWheel vertical(&verticalEnc, lemlib::Omniwheel::NEW_2 * V_POD_SCALE,
                                VERTICAL_ODOM_OFFSET);
 
 // DRIVETRAIN SETTINGS
@@ -146,6 +146,7 @@ void disabled() {}
 void competition_initialize() {}
 
 void autonomous() {
+  chassis.setBrakeMode(pros::E_MOTOR_BRAKE_BRAKE);
   switch (autoMode) {
   case 0:
     leftQualsAuto();
@@ -181,4 +182,7 @@ void autonomous() {
   }
 }
 
-void opcontrol() { usercontrol(); }
+void opcontrol() { 
+    chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
+
+  usercontrol(); }

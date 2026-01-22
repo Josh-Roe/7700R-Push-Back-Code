@@ -7,7 +7,7 @@ inline bool wingFlag = true;
 inline bool midDescoreFlag = true;
 
 inline void usercontrol() {
-  startIMURotationTask();
+  startFixPoseTask();
   chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
 
   while (true) {
