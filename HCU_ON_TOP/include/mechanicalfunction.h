@@ -17,7 +17,8 @@ enum class ScoringMode {
     INTAKE,
     OUTTAKE,
     TOP,
-    MIDDLE
+    MIDDLE,
+    SKILLS
 };
 
 // What the driver wants the system to do right now.
@@ -54,6 +55,13 @@ inline void applyScoringMode(ScoringMode mode) {
             gateT.set_value(false);
             gateB.set_value(false);
             break;
+            
+        case ScoringMode::SKILLS:
+            conveyorR.move_voltage(10000);
+            conveyorL.move_voltage(10000);
+            gateT.set_value(false);
+            gateB.set_value(false);
+            break;
 
         case ScoringMode::NONE:
         default:
@@ -75,6 +83,8 @@ inline void setScoringMode(const std::string& mode) {
         requestedMode = ScoringMode::TOP;
     } else if (mode == "MIDDLE") {
         requestedMode = ScoringMode::MIDDLE;
+    } else if (mode == "SKILLS") {
+        requestedMode = ScoringMode::SKILLS;
     } else { // "NONE" or anything else
         requestedMode = ScoringMode::NONE;
     }
