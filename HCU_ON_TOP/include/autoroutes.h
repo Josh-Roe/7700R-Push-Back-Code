@@ -92,65 +92,80 @@ inline void rightQualsAuto() {
 }
 inline void fullWPAuto() {
   pros::lcd::print(6, "Running Full WP Auto");
-  chassis.setPose({50, 12, 0});
+  chassis.setPose({50, 13.5, 0});
     startFixPoseTask();
   // Full WP AUTO GOES HERE
-  moveDistance(31.25, 1000);
+  moveDistance(30.5, 750);
   chassis.turnToHeading(90, 600);
   pros::delay(200);
   scraper_tog();
   setScoringMode("INTAKE");
   pros::delay(400);
-  moveDistance(100000, 900, 40);
-  chassis.moveToPoint(20, 48, 1400, {.forwards = false, .maxSpeed = 90});
-  pros::delay(800);
+  moveDistance(100000, 800, 40);
+  chassis.moveToPoint(20, 48, 1000, {.forwards = false, .maxSpeed = 90});
+  pros::delay(300);
+  setScoringMode("NONE");
+  pros::delay(100);
+  setScoringMode("OUTTAKE");
+  pros::delay(100);
   setScoringMode("TOP");
   chassis.moveToPoint(0, 48, 300, {.forwards = false, .maxSpeed = 40});
   scraper_tog();
-  pros::delay(1000);
+  pros::delay(900);
   chassis.setPose({30, 48, chassis.getPose().theta});
   setScoringMode("INTAKE");
-  moveDistance(8, 700, 127, 40);
-  chassis.turnToPoint(27,23,650);
-  chassis.moveToPoint(27, 23, 1400, {.minSpeed = 40});
-  pros::delay(500);
+  chassis.turnToPoint(28,23,750);
+  chassis.moveToPoint(28, 23, 1400, {.minSpeed = 40});
+  pros::delay(300);
   scraper_tog();
-  chassis.moveToPoint(28, -29, 2000, {.minSpeed = 40});
+  chassis.moveToPoint(27.5, -27, 2000, {.minSpeed = 40});
   pros::delay(300);
   scraper_tog();
   pros::delay(550);
   scraper_tog();
-  chassis.moveToPoint(14.5, -8.5, 1300, {.forwards = false, .maxSpeed = 100});
-  pros::delay(800);
-  setScoringMode("MIDDLE");
-  pros::delay(900);
-  setScoringMode("NONE");
-  chassis.moveToPoint(52, -46.5, 1500, {.maxSpeed = 100});
+  chassis.turnToPoint(44, -46.75, 600);
+  chassis.moveToPoint(44, -46.75, 1500, {.maxSpeed = 100});
   chassis.turnToHeading(90, 600);
-  setScoringMode("INTAKE");
-  pros::delay(600);
-  moveDistance(100000, 1100, 40);
-  chassis.moveToPoint(20, -46.5, 1300, {.forwards = false, .maxSpeed = 90});
-  pros::delay(1000);
+  chassis.moveToPoint(28, -46.75, 2000, {.forwards = false, .maxSpeed = 90});
+  setScoringMode("NONE");
+  pros::delay(200);
+  setScoringMode("OUTTAKE");
+  pros::delay(100);
   setScoringMode("TOP");
-  chassis.moveToPoint(0, -46.5, 700, {.forwards = false, .maxSpeed = 40});
-  scraper_tog();
+  pros::delay(1600);
+  chassis.moveToPoint(90, -47, 600, {.maxSpeed = 80});
+  chassis.setPose({30, -48, chassis.getPose().theta});
+  chassis.moveToPoint(90, -47, 675, {.maxSpeed = 40});
+  pros::delay(600);
+  setScoringMode("INTAKE");
+  chassis.moveToPoint(14, -8.5, 1600, {.forwards = false, .maxSpeed = 100});
+  pros::delay(1450);
+  setScoringMode("MIDDLE");
+  pros::delay(1100);
+  moveDistance(13, 800, 127, 60);
+  midgoal_tog();
+  moveDistance(-13, 800, 127, 60);
+  midgoal_tog();
   pros::delay(1000000);
 }
 inline void leftElimsAuto() {
   pros::lcd::print(6, "Running Left Elims Auto");
-  chassis.setPose({50, -18, 180});
+  chassis.setPose({50, -17, 180});
   startFixPoseTask();
   // LEFT ELIMS AUTO GOES HERE
-  moveDistance(30, 1000);
+  moveDistance(31, 1000);
   chassis.turnToHeading(90, 600);
   pros::delay(200);
   scraper_tog();
   setScoringMode("INTAKE");
   pros::delay(400);
-  moveDistance(100000, 900, 40);
+  moveDistance(100000, 875, 40);
   chassis.moveToPoint(20, -48, 1400, {.forwards = false, .maxSpeed = 80});
-  pros::delay(900);
+  pros::delay(300);
+  setScoringMode("NONE");
+  pros::delay(100);
+  setScoringMode("OUTTAKE");
+  pros::delay(100);
   setScoringMode("TOP");
   chassis.moveToPoint(0, -48, 600, {.forwards = false, .maxSpeed = 40});
   scraper_tog();
@@ -158,7 +173,7 @@ inline void leftElimsAuto() {
   chassis.setPose({30, -48, chassis.getPose().theta});
   moveDistance(8, 800);
   setScoringMode("INTAKE");
-  chassis.turnToPoint(23,-24,800);
+  chassis.turnToPoint(23,-24,600);
   chassis.moveToPoint(23, -24, 1400, {.minSpeed = 40});
   pros::delay(500);
   scraper_tog();
@@ -167,15 +182,16 @@ inline void leftElimsAuto() {
   moveDistance(-19, 1000);
   setScoringMode("MIDDLE");
   pros::delay(1200);
+  setScoringMode("NONE");
   scraper_tog();
   moveDistance(13, 800);
   midgoal_tog();
-  moveDistance(-13, 800, 127, 50);
-  chassis.moveToPoint(30, -30.5, 1200);
+  moveDistance(-13, 800, 127, 70);
+  chassis.moveToPoint(30, -34, 1200);
   midgoal_tog();
   chassis.turnToHeading(90, 800);
   pros::delay(800);
-  moveDistance(-23, 1200);
+  moveDistance(-22, 1200);
   chassis.turnToHeading(105, 600);
   pros::delay(1000000);
 }
@@ -234,36 +250,44 @@ inline void tuningAuto() {
 inline void skillsAuto() {
   pros::lcd::print(6, "Running Skills Auto");
   startFixPoseTask();
-  chassis.setPose({-45, 14.5, 90});
+  chassis.setPose({-45, 15.5, 90});
   // SKILLS AUTO GOES HERE
 
 //SCORE 2 MIDDLE
   wing_tog();
   setScoringMode("INTAKE");
-  chassis.moveToPoint(-22 , 22, 1500, {.maxSpeed = 90});
-  chassis.turnToPoint(-9.5, 8.5, 800, {.forwards = false});
+  chassis.moveToPoint(-17 , 26, 1700, {.maxSpeed = 70});
+  pros::delay(900);
+  scraper_tog();
+  pros::delay(200);
+  chassis.turnToPoint(-9.5, 8, 800 ,{.forwards = false});
   setScoringMode("NONE");
-  chassis.moveToPoint(-9.5,8.5, 1200, {.forwards = false});
+  chassis.moveToPoint(-9.5,8, 1200, {.forwards = false});
   pros::delay(400);
   setScoringMode("SKILLS");
-  pros::delay(1600);
-
-  //GET FIRST MATCH LOADER
-  chassis.moveToPoint(-48 , 48, 1400, {.maxSpeed = 100});
+  pros::delay(650);
+  setScoringMode("NONE");
+  
+  chassis.moveToPoint(-38 , 48, 1400, {.maxSpeed = 100});
+  
+  
   chassis.turnToHeading(-90, 600);
+  chassis.moveToPoint(-25, 48, 1400, {.forwards = false, .maxSpeed = 80});
+  pros::delay(600);
+  setScoringMode("TOP");
+  pros::delay(1500);
+  chassis.moveToPoint(-90, 48, 2700, { .maxSpeed = 40});
+  chassis.setPose({-30, 48, chassis.getPose().theta});
+  //GET FIRST MATCH LOADER
   pros::delay(200);
-  scraper_tog();
   setScoringMode("INTAKE");
-  pros::delay(400);
-  moveDistance(100000, 200, 80);
-  moveDistance(100000, 2400, 35);
   chassis.moveToPoint(-34, 59, 1400, {.forwards = false, .maxSpeed = 100});
   //GO DOWN SIDE AND SCORE TOP
   chassis.turnToPoint(32, 59, 1300, {.forwards = false});
   setScoringMode("NONE");
   chassis.moveToPoint(32, 59, 1900, {.forwards = false});
   setScoringMode("OUTTAKE");
-  pros::delay(200);
+  pros::delay(100);
   setScoringMode("INTAKE");
   pros::delay(300);
   setScoringMode("NONE");
@@ -285,55 +309,82 @@ inline void skillsAuto() {
   chassis.setPose({30, 48, chassis.getPose().theta});
   setScoringMode("INTAKE");
   //GET SECOND MATCH LOADER
-  chassis.moveToPoint(90, 46, 700, { .maxSpeed = 70});
-  chassis.moveToPoint(90, 46, 2600, { .maxSpeed= 30});
+  chassis.moveToPoint(90, 47, 700, { .maxSpeed = 70});
+  chassis.moveToPoint(90, 47, 2700, { .maxSpeed= 30});
   chassis.moveToPoint(30, 48.5, 1000, {.forwards = false, .maxSpeed = 80});
-  pros::delay(900);
+  setScoringMode("NONE");
+  pros::delay(700);
+  setScoringMode("OUTTAKE");
+  pros::delay(150);
   setScoringMode("TOP");
   chassis.moveToPoint(0, 48.5, 2300, {.forwards = false, .maxSpeed = 40});
   scraper_tog();
+  pros::delay(2300);
 
   //LINE UP FOR PARK CLEAR AND SCORE
-  chassis.moveToPoint(43 , 48, 1000);
+  // chassis.moveToPoint(43 , 48, 1000);
+  // chassis.setPose({30, 48, chassis.getPose().theta});
+  // chassis.moveToPoint(66, 28, 1700, {.maxSpeed = 80});
+  // chassis.swingToPoint(66.5, 0, lemlib::DriveSide::RIGHT,800);
+  // chassis.moveToPoint(66.5, -200, 1500, {.maxSpeed = 127, .minSpeed = 127});
+  // midgoal_tog();
+  // setScoringMode("INTAKE");
+  // pros::delay(150);
+  // scraper_tog();
+  // pros::delay(500);
+  // scraper_tog();
+  // pros::delay(500);
+  // chassis.moveToPoint(68, -200, 1100, {.maxSpeed = 80});
+  
+  // chassis.turnToHeading(170, 800);
+  // midgoal_tog();
+  
+  // pros::delay(800);
+  // moveDistance(-9, 1000);
+  // setScoringMode("NONE");
+  // chassis.turnToHeading(-90, 800);
+  // pros::delay(800);
+  // resetOnPark();
+  // chassis.moveToPoint(25, -22, 1500);
+  // setScoringMode("INTAKE");
+  // chassis.turnToPoint(15, -11, 800, {.forwards = false});
+  // chassis.moveToPoint(15, -11, 1200, {.forwards = false});
+  // pros::delay(400);
+  // setScoringMode("SKILLS");
+  // pros::delay(2000);
   chassis.setPose({30, 48, chassis.getPose().theta});
-  chassis.moveToPoint(66, 28, 1700, {.maxSpeed = 80});
-  chassis.swingToPoint(66.5, 0, lemlib::DriveSide::RIGHT,800);
-  chassis.moveToPoint(66.5, -200, 1500, {.maxSpeed = 127, .minSpeed = 127});
-  midgoal_tog();
+  moveDistance(8, 800, 127, 40);
   setScoringMode("INTAKE");
-  pros::delay(150);
-  scraper_tog();
+  chassis.turnToPoint(26,23,650);
+  chassis.moveToPoint(26, 23, 1400, {.minSpeed = 40});
   pros::delay(500);
   scraper_tog();
-  pros::delay(500);
-  chassis.moveToPoint(68, -200, 1100, {.maxSpeed = 80});
-  
-  chassis.turnToHeading(170, 800);
-  midgoal_tog();
-  
+  chassis.moveToPoint(28.5, -29, 2000, {.minSpeed = 40});
+  pros::delay(300);
+  scraper_tog();
+  pros::delay(550);
+  scraper_tog();
+  chassis.moveToPoint(15, -8.5, 1300, {.forwards = false, .maxSpeed = 100});
   pros::delay(800);
-  moveDistance(-9, 1000);
-  setScoringMode("NONE");
-  chassis.turnToHeading(-90, 800);
-  pros::delay(800);
-  resetOnPark();
-  chassis.moveToPoint(25, -22, 1500);
-  setScoringMode("INTAKE");
-  chassis.turnToPoint(15, -11, 800, {.forwards = false});
-  chassis.moveToPoint(15, -11, 1200, {.forwards = false});
-  pros::delay(400);
   setScoringMode("SKILLS");
-  pros::delay(2000);
-  
+  pros::delay(1200);
+  setScoringMode("NONE");
+  pros::delay(300);
+
   //GET THIRD MATCH LOADER
-  chassis.moveToPoint(48, -50, 2000, {.maxSpeed = 100});
+  chassis.moveToPoint(44, -48, 2000, {.maxSpeed = 100});
+  pros::delay(300);
+  midgoal_tog();
+  pros::delay(300);
+  midgoal_tog();
   chassis.turnToHeading(90, 600);
+  chassis.moveToPoint(25, -48, 1400, {.forwards = false, .maxSpeed = 80});
+  pros::delay(600);
+  setScoringMode("TOP");
+  pros::delay(1500);
+  chassis.moveToPoint(90, -48, 2700, { .maxSpeed = 40});
+  chassis.setPose({30, -48, chassis.getPose().theta});
   setScoringMode("INTAKE");
-  pros::delay(200);
-  scraper_tog();
-  pros::delay(400);
-  moveDistance(100000, 200, 80);
-  moveDistance(100000, 3000, 35);
   chassis.moveToPoint(37, -62, 1000, {.forwards = false, .maxSpeed = 80});
   pros::delay(600);
 
@@ -353,19 +404,26 @@ inline void skillsAuto() {
   chassis.moveToPoint(-42, -48, 1500, {.forwards = false, .minSpeed = 50});
   chassis.setPose({chassis.getPose().x, -72 + static_cast<float>(distance_sensor_right.get()/25.4) + 8.00f, chassis.getPose().theta});
   chassis.turnToPoint(-28, -48, 800, {.forwards = false});
-  chassis.moveToPoint(-28, -48, 1000, {.forwards = false, .minSpeed = 80});
-  pros::delay(600);
+  chassis.moveToPoint(-28, -48, 1000, {.forwards = false, .maxSpeed = 80});
+  scraper_tog();
+  setScoringMode("NONE");
+  pros::delay(450);
+  setScoringMode("OUTTAKE");
+  pros::delay(150);
   setScoringMode("TOP");
   chassis.moveToPoint(0, -48, 1800, {.forwards = false, .maxSpeed = 40});
   chassis.setPose({-30, -48, chassis.getPose().theta});
   //GET FOURTH MATCH LOADER
-  chassis.moveToPoint(-76, -44, 600, { .maxSpeed = 80});
-  scraper_tog();
-  chassis.moveToPoint(-76, -44, 2200, { .maxSpeed = 30});
+  chassis.moveToPoint(-76, -45, 600, { .maxSpeed = 80});
+  chassis.moveToPoint(-76, -45, 2200, { .maxSpeed = 40});
     setScoringMode("INTAKE");
   
   chassis.moveToPoint(-32, -48, 1000, {.forwards = false, .maxSpeed = 80});
-  pros::delay(900);
+  pros::delay(400);
+  setScoringMode("NONE");
+  pros::delay(400);
+  setScoringMode("OUTTAKE");
+  pros::delay(150);
   setScoringMode("TOP");
   chassis.moveToPoint(0, -48, 1800, {.forwards = false, .maxSpeed = 40});
   scraper_tog();
@@ -373,11 +431,10 @@ inline void skillsAuto() {
   // PARK
   chassis.moveToPoint(-43 , -48, 1000);
   chassis.setPose({-30, -48, chassis.getPose().theta});
-  chassis.moveToPoint(-65, -24, 1700, {.maxSpeed = 80});
-  chassis.swingToPoint(-67, 0, lemlib::DriveSide::RIGHT,1000);
-  chassis.moveToPoint(-67, 200, 1100, {.minSpeed = 127});
+  chassis.moveToPoint(-66, -24, 1700, {.maxSpeed = 80});
+  chassis.swingToPoint(-68, 0, lemlib::DriveSide::RIGHT,1000);
+  chassis.moveToPoint(-68, 200, 1200, {.minSpeed = 127});
   setScoringMode("INTAKE");
-  pros::delay(100);
   scraper_tog();
   pros::delay(500);
   scraper_tog();
