@@ -41,6 +41,7 @@ inline void moveDistance(
     while (pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
         lemlib::Pose cur = chassis.getPose();
 
+        //Calculate the error for the error function
         double dx = cur.x - start.x;
         double dy = cur.y - start.y;
         double traveled = dx * forwardX + dy * forwardY;
@@ -64,7 +65,7 @@ inline void moveDistance(
             derivative = error - prevError; // dt baked into kD
         }
         prevError = error;
-
+        //PD Controller Equation
         output = kP * error + kD * derivative;
 
         // clamp to max
@@ -252,7 +253,7 @@ inline bool runOdomCalibrationTrial(double targetDeg,
 // ========================================================================
 
 inline void resetOnPark(){
-      chassis.setPose({float(72-distance_sensor_back.get() / 25.4f - 3.5), float(-72+(distance_sensor_left.get() / 25.4f) + 1.5), chassis.getPose().theta});
+      chassis.setPose({float(72-(distance_sensor_back.get() / 25.4f) - 15.0), float(-72+(distance_sensor_left.get() / 25.4f) + 7.5), chassis.getPose().theta});
         pros::lcd::print(5, "X: %.2f Y: %.2f", chassis.getPose().x, chassis.getPose().y);
 }
 
@@ -535,7 +536,7 @@ inline void _ramseteCore(double targetX, double targetY,
         double leftCmd  = v - w * (TRACKWIDTH / 2.0);
         double rightCmd = v + w * (TRACKWIDTH / 2.0);
 
-        // Normalize to ±maxSpeed
+        // Normalize to maxSpeed
         double maxMag = std::max(std::fabs(leftCmd), std::fabs(rightCmd));
         if (maxMag > maxSpeed && maxMag > 1e-6) {
             double scale = maxSpeed / maxMag;
@@ -583,7 +584,7 @@ inline void ensureRamseteTask() {
     }
 }
 
-// "Cancel" just means: no command is currently queued/running
+// Cancel the movement if necessary
 inline void cancelRamsete() {
     RamseteHasCmd  = false;
     RamseteActive  = false;

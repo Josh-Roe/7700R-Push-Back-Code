@@ -57,8 +57,8 @@ inline void applyScoringMode(ScoringMode mode) {
             break;
             
         case ScoringMode::SKILLS:
-            conveyorR.move_voltage(10000);
-            conveyorL.move_voltage(10000);
+            conveyorR.move_voltage(7000);
+            conveyorL.move_voltage(7000);
             gateT.set_value(false);
             gateB.set_value(false);
             break;
