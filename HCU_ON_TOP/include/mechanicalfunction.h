@@ -6,9 +6,12 @@
 // toggle state flags
 inline bool wingd = false;
 inline bool scrapd = false;
-inline bool gateBd = true;
-inline bool gateTd = false;
-inline bool midDescored = false;
+inline bool hooded = false;
+inline bool prerollered = false;
+
+// ==== TOP ROLLER JAM LATCH STATE ====
+// Once true, the top roller stays off during INTAKE until another button resets it.
+inline bool topRollerLatchedOff = false;
 
 // ==== SCORING MODE STATE ====
 
@@ -29,51 +32,59 @@ inline ScoringMode requestedMode = ScoringMode::NONE;
 inline void applyScoringMode(ScoringMode mode) {
     switch (mode) {
         case ScoringMode::INTAKE:
-            conveyorR.move_voltage(12000);
-            conveyorL.move_voltage(12000);
-            gateT.set_value(false);
-            gateB.set_value(true);
+            bottomStageFull.move_voltage(12000);
+            bottomStageHalf.move_voltage(12000);
+
+            // If jam-latched, keep top roller off even if R1 is pressed again
+            if (topRollerLatchedOff) {
+                topStage.move_voltage(0);
+            } else {
+                topStage.move_voltage(12000);
+            }
+
+            hoodPiston.set_value(false);
             break;
 
         case ScoringMode::OUTTAKE:
-            conveyorR.move_voltage(-12000);
-            conveyorL.move_voltage(-12000);
-            gateT.set_value(false);
-            gateB.set_value(true);
+            bottomStageFull.move_voltage(-12000);
+            bottomStageHalf.move_voltage(-12000);
+            topStage.move_voltage(-12000);
+            hoodPiston.set_value(false);
             break;
 
         case ScoringMode::TOP:
-            conveyorR.move_voltage(12000);
-            conveyorL.move_voltage(12000);
-            gateT.set_value(true);
-            gateB.set_value(true);
+            bottomStageFull.move_voltage(12000);
+            bottomStageHalf.move_voltage(12000);
+            topStage.move_voltage(12000);
+            hoodPiston.set_value(true);
             break;
 
         case ScoringMode::MIDDLE:
-            conveyorR.move_voltage(12000);
-            conveyorL.move_voltage(12000);
-            gateT.set_value(false);
-            gateB.set_value(false);
+            bottomStageFull.move_voltage(12000);
+            bottomStageHalf.move_voltage(12000);
+            topStage.move_voltage(-12000);
+            hoodPiston.set_value(false);
             break;
             
         case ScoringMode::SKILLS:
-            conveyorR.move_voltage(7000);
-            conveyorL.move_voltage(7000);
-            gateT.set_value(false);
-            gateB.set_value(false);
+            bottomStageFull.move_voltage(7000);
+            bottomStageHalf.move_voltage(7000);
+            topStage.move_voltage(-7000);
+            hoodPiston.set_value(false);
             break;
 
         case ScoringMode::NONE:
         default:
-            conveyorR.move_voltage(0);
-            conveyorL.move_voltage(0);
-            gateT.set_value(false);
-            gateB.set_value(true);
+            bottomStageFull.move_voltage(0);
+            bottomStageHalf.move_voltage(0);
+            topStage.move_voltage(0);
+            hoodPiston.set_value(false);
             break;
     }
 }
 
-// This is now just a "request" function; the task will do the real work.
+// This only changes the requested mode.
+// It does NOT clear the jam latch.
 inline void setScoringMode(const std::string& mode) {
     if (mode == "INTAKE") {
         requestedMode = ScoringMode::INTAKE;
@@ -90,6 +101,21 @@ inline void setScoringMode(const std::string& mode) {
     }
 }
 
+// R1 is NOT allowed to clear the jam latch anymore
+inline void rearmTopRollerIntake() {
+    // Intentionally do nothing
+}
+
+// No longer needed for R1 rearm logic
+inline void notifyIntakeReleased() {
+    // Intentionally do nothing
+}
+
+// Use this from another button to re-enable the top roller
+inline void resetTopRollerLatch() {
+    topRollerLatchedOff = false;
+}
+
 // ==== SCORING + JAM HANDLER TASK ====
 // Runs in the background and automatically unjams
 inline void scoring_task(void* /*param*/) {
@@ -102,6 +128,12 @@ inline void scoring_task(void* /*param*/) {
     // -------- TOP DELAY SEQUENCER (Gate opens first, rollers later) --------
     constexpr uint32_t TOP_ROLLER_DELAY_MS = 100;
 
+    // -------- TOP ROLLER TORQUE JAM SETTINGS (INTAKE only) --------
+    constexpr double TOP_SPIKE_TORQUE = 0.4;   // lower if it never triggers
+    constexpr uint32_t TOP_SPIKE_MS   = 50;    // sustained torque time
+
+    uint32_t topTorqueStart = 0;
+
     ScoringMode lastRequested = ScoringMode::NONE;
     bool topDelayActive = false;
     uint32_t topDelayStart = 0;
@@ -109,8 +141,27 @@ inline void scoring_task(void* /*param*/) {
 
     while (true) {
         // --- MEASURE LOAD ---
-        int convRCurrent = conveyorR.get_current_draw(); // mA
-        int convLCurrent = conveyorL.get_current_draw(); // mA
+        int convRCurrent = bottomStageFull.get_current_draw(); // mA
+        int convLCurrent = bottomStageHalf.get_current_draw(); // mA
+        double topTorque = topStage.get_torque();              // Nm
+
+        // ---- Top roller jam detection (INTAKE mode only) ----
+        if (requestedMode == ScoringMode::INTAKE && !topRollerLatchedOff) {
+            if (topTorque >= TOP_SPIKE_TORQUE) {
+                if (topTorqueStart == 0) {
+                    topTorqueStart = pros::millis();
+                }
+
+                if (pros::millis() - topTorqueStart >= TOP_SPIKE_MS) {
+                    topRollerLatchedOff = true;
+                    topStage.move_voltage(0); // stop immediately
+                }
+            } else {
+                topTorqueStart = 0;
+            }
+        } else {
+            topTorqueStart = 0;
+        }
 
         // Optional: prevent jam-detect during the TOP delay window
         bool allowJamDetect = !topDelayActive;
@@ -125,17 +176,17 @@ inline void scoring_task(void* /*param*/) {
                     lastRequested = requestedMode;
 
                     if (requestedMode == ScoringMode::TOP) {
-                        // Start TOP sequence: open gate NOW, rollers after 100ms
+                        // Start TOP sequence: open gate NOW, rollers after delay
                         topDelayActive = true;
                         topDelayStart  = pros::millis();
 
                         // Gate opens immediately
-                        gateT.set_value(true);
-                        gateB.set_value(true);
+                        hoodPiston.set_value(true);
 
                         // Rollers OFF during delay
-                        conveyorR.move_voltage(0);
-                        conveyorL.move_voltage(0);
+                        bottomStageFull.move_voltage(0);
+                        bottomStageHalf.move_voltage(0);
+                        topStage.move_voltage(0);
                     } else {
                         // Any other mode cancels TOP delay
                         topDelayActive = false;
@@ -144,33 +195,31 @@ inline void scoring_task(void* /*param*/) {
 
                 if (topDelayActive) {
                     // While waiting: keep gate open, keep rollers off
-                    gateT.set_value(true);
-                    gateB.set_value(true);
-                    conveyorR.move_voltage(0);
-                    conveyorL.move_voltage(0);
+                    hoodPiston.set_value(true);
+                    bottomStageFull.move_voltage(0);
+                    bottomStageHalf.move_voltage(0);
+                    topStage.move_voltage(0);
 
-                    // After delay: start rollers, then we can exit the sequence
+                    // After delay: start rollers
                     if (pros::millis() - topDelayStart >= TOP_ROLLER_DELAY_MS) {
                         topDelayActive = false;
-
-                        // Now run actual TOP behavior (rollers on + gates open)
-                        // (You can call applyScoringMode(TOP) or set directly)
                         applyScoringMode(ScoringMode::TOP);
                     }
                 } else {
-                    // Normal: follow requestedMode
+                    // Normal: follow requested mode
                     applyScoringMode(requestedMode);
                 }
 
-                // ---- Jam detection (sustained spike) ----
+                // ---- Bottom conveyor jam detection ----
                 if (jamNow) {
                     if (jamStart == 0) jamStart = pros::millis();
+
                     if (pros::millis() - jamStart >= JAM_DETECT_MS) {
                         jamState   = JamState::OUTTAKING;
                         stateStart = pros::millis();
 
-                        conveyorR.move_voltage(-12000);
-                        conveyorL.move_voltage(-12000);
+                        bottomStageFull.move_voltage(-12000);
+                        bottomStageHalf.move_voltage(-12000);
                     }
                 } else {
                     jamStart = 0;
@@ -184,8 +233,8 @@ inline void scoring_task(void* /*param*/) {
                     jamState   = JamState::INTAKING;
                     stateStart = pros::millis();
 
-                    conveyorL.move_voltage(12000);
-                    conveyorR.move_voltage(12000);
+                    bottomStageFull.move_voltage(12000);
+                    bottomStageHalf.move_voltage(12000);
                 }
                 break;
             }
@@ -209,7 +258,7 @@ inline void start_scoring_task() {
     static pros::Task scoringTask(scoring_task, nullptr, "Scoring Task");
 }
 
-// ==== YOUR OTHER TOGGLES (unchanged) ====
+// ==== YOUR OTHER TOGGLES ====
 
 inline void wing_tog() {
     wingd = !wingd;
@@ -221,8 +270,7 @@ inline void scraper_tog() {
     scraper.set_value(scrapd);
 }
 
-inline void midgoal_tog() {
-    midDescored = !midDescored;
-    midDescore.set_value(midDescored);
+inline void preroller_tog() {
+    prerollered = !prerollered;
+    prerollerLift.set_value(prerollered);
 }
-

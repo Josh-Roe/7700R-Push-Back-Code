@@ -64,12 +64,12 @@
 extern lemlib::Chassis chassis;
 extern pros::adi::DigitalOut scraper;
 extern pros::adi::DigitalOut wing;
-extern pros::adi::DigitalOut midDescore;
-extern pros::adi::DigitalOut gateT;
-extern pros::adi::DigitalOut gateB;
+extern pros::adi::DigitalOut prerollerLift;
+extern pros::adi::DigitalOut hoodPiston;
 extern pros::Controller controller;
-extern pros::Motor conveyorR;
-extern pros::Motor conveyorL;
+extern pros::Motor bottomStageFull;
+extern pros::Motor bottomStageHalf;
+extern pros::Motor topStage;
 extern pros::Distance distance_sensor_left;
 extern pros::Distance distance_sensor_right;
 extern pros::Distance distance_sensor_back;

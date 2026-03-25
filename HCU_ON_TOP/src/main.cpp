@@ -1,6 +1,7 @@
 #include "main.h"
 #include "autoroutes.h"
 #include "lemlib/api.hpp"
+#include "mechanicalfunction.h"
 #include "settings.h"
 #include "usercontroller.h"
 // CONTROLLER SET UP
@@ -23,16 +24,17 @@ pros::Distance distance_sensor_right(DISTANCE_SENSOR_RIGHT);
 pros::Distance distance_sensor_back(DISTANCE_SENSOR_BACK);
 
 // OTHER MOTORS SET UP
-pros::Motor conveyorL(CONVEYOR_MOTOR_L, pros::MotorGearset::blue,
+pros::Motor bottomStageFull(BOT_STAGE_FULL, pros::MotorGearset::blue,
                      pros::v5::MotorUnits::degrees);
-pros::Motor conveyorR(CONVEYOR_MOTOR_R, pros::MotorGearset::blue,
+pros::Motor bottomStageHalf(BOT_STAGE_HALF, pros::MotorGearset::green,
+                       pros::v5::MotorUnits::degrees);
+pros::Motor topStage(TOP_STAGE, pros::MotorGearset::green,
                        pros::v5::MotorUnits::degrees);
 
 pros::adi::DigitalOut wing(WING);
 pros::adi::DigitalOut scraper(SCRAPER);
-pros::adi::DigitalOut gateB(GATEB);
-pros::adi::DigitalOut gateT(GATET);
-pros::adi::DigitalOut midDescore(MID_DESCORE);
+pros::adi::DigitalOut hoodPiston(HOOD_P);
+pros::adi::DigitalOut prerollerLift(PREROLLER_LIFT);
 
 // TRACKING WHEEL OFFSETS
 lemlib::TrackingWheel horizontal(&horizontalEnc, lemlib::Omniwheel::NEW_2 * H_POD_SCALE,
@@ -120,8 +122,9 @@ void initialize() {
   pros::lcd::initialize();
   chassis.calibrate();
   chassis.setPose({0, 0, 0});
-  conveyorL.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
-  conveyorR.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+  bottomStageFull.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+  bottomStageHalf.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+  topStage.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
   start_scoring_task();
   setScoringMode("NONE");
   // SCREEN DISPLAY
@@ -183,6 +186,9 @@ void autonomous() {
 }
 
 void opcontrol() { 
+  if (prerollered) {
+    preroller_tog();
+  }
     chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
 
   usercontrol(); }

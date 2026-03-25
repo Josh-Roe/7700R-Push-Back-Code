@@ -8,55 +8,62 @@ inline bool midDescoreFlag = true;
 
 inline void usercontrol() {
   startFixPoseTask();
+  start_scoring_task();
   chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
+
+  bool lastL1 = false;
+  bool lastL2 = false;
+  bool lastR2 = false;
 
   while (true) {
     chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
-    // ===== DRIVE (unchanged) =====
+
     int leftY = controller.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y);
     int rightX = controller.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X);
     chassis.arcade(leftY, rightX);
 
-    // ===== SCORING MODE SELECTION =====
-    // Pick one mode per loop depending on which button is pressed.
-    // Priority order: L1 > L2 > R1 > R2, then NONE when nothing held.
+    bool r1Now = controller.get_digital(pros::E_CONTROLLER_DIGITAL_R1);
+    bool l1Now = controller.get_digital(pros::E_CONTROLLER_DIGITAL_L1);
+    bool l2Now = controller.get_digital(pros::E_CONTROLLER_DIGITAL_L2);
+    bool r2Now = controller.get_digital(pros::E_CONTROLLER_DIGITAL_R2);
 
-    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
-      // Long goal
+    // Only OTHER scoring buttons can clear the jam latch
+    if ((l1Now && !lastL1) ||
+        (l2Now && !lastL2) ||
+        (r2Now && !lastR2)) {
+      resetTopRollerLatch();
+    }
+
+    if (l1Now) {
       setScoringMode("TOP");
-    } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
-      // Mid goal
+    } else if (l2Now) {
       setScoringMode("MIDDLE");
-    } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
-      // Intake
+    } else if (r1Now) {
       setScoringMode("INTAKE");
-    } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
-      // Outtake
+    } else if (r2Now) {
       setScoringMode("OUTTAKE");
     } else {
-      // No scoring buttons held
       setScoringMode("NONE");
     }
 
-    // ===== SCRAPER (momentary) =====
-    // Y: scraper
+    lastL1 = l1Now;
+    lastL2 = l2Now;
+    lastR2 = r2Now;
+
     bool scraperState = controller.get_digital(pros::E_CONTROLLER_DIGITAL_Y);
     scraper.set_value(scraperState);
 
-    // ===== WING / PARK / PARKCLAMP TOGGLES (unchanged) =====
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_RIGHT) && wingFlag) {
       wing_tog();
       wingFlag = false;
-    } else if (!controller.get_digital(pros::E_CONTROLLER_DIGITAL_RIGHT) &&
-               !wingFlag) {
+    } else if (!controller.get_digital(pros::E_CONTROLLER_DIGITAL_RIGHT) && !wingFlag) {
       wingFlag = true;
     }
 
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN) && midDescoreFlag) {
-      midgoal_tog();
+      preroller_tog();
       midDescoreFlag = false;
-    } else if (!controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN) &&
-               !midDescoreFlag) {
+    } else if (!controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN) && !midDescoreFlag) {
       midDescoreFlag = true;
     }
 
