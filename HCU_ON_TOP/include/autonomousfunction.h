@@ -10,22 +10,35 @@
 
 // --------------------- Public & internal params -------------------------
 
+inline double normalizeAngleDeg(double angle) {
+    while (angle > 180.0) angle -= 360.0;
+    while (angle < -180.0) angle += 360.0;
+    return angle;
+}
+
 inline void moveDistance(
     double inches,
     int timeout,
     double maxSpeed = 127,
-    double minSpeed = 5.0   // NEW: minimum commanded speed
+    double minSpeed = 5.0
 ) {
     const double kP = MOVE_DISTANCE_P;
     const double kD = LATERAL_KD;
+
+    // Heading correction gain
+    const double kHeadingP = 1.8;   // tune this
+    // optional derivative if wanted later:
+    // const double kHeadingD = 0.0;
 
     const double tolerance         = LATERAL_SMALL_ERROR;
     const int    smallErrorTimeout = LATERAL_SMALL_ERROR_TIMEOUT;
     const int    loopDelay         = 10;
 
     lemlib::Pose start = chassis.getPose();
+    double targetHeading = start.theta;
+
     const double DEG_TO_RAD = M_PI / 180.0;
-    double theta0Rad = start.theta * DEG_TO_RAD;
+    double theta0Rad = targetHeading * DEG_TO_RAD;
 
     // LemLib frame: heading 0° = +Y
     double forwardX = std::sin(theta0Rad);
@@ -33,7 +46,6 @@ inline void moveDistance(
 
     double error     = inches;
     double prevError = error;
-    double output    = 0.0;
 
     uint32_t startTime             = pros::millis();
     uint32_t withinSmallErrorStart = 0;
@@ -41,7 +53,7 @@ inline void moveDistance(
     while (pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
         lemlib::Pose cur = chassis.getPose();
 
-        //Calculate the error for the error function
+        // Distance traveled along original heading
         double dx = cur.x - start.x;
         double dy = cur.y - start.y;
         double traveled = dx * forwardX + dy * forwardY;
@@ -50,34 +62,50 @@ inline void moveDistance(
 
         // small-error timeout
         if (std::fabs(error) < tolerance) {
-            if (withinSmallErrorStart == 0)
+            if (withinSmallErrorStart == 0) {
                 withinSmallErrorStart = pros::millis();
+            }
             if (pros::millis() - withinSmallErrorStart >=
-                static_cast<uint32_t>(smallErrorTimeout))
+                static_cast<uint32_t>(smallErrorTimeout)) {
                 break;
+            }
         } else {
             withinSmallErrorStart = 0;
         }
 
-        // PD controller
+        // Forward PD
         double derivative = 0.0;
         if (std::fabs(error) > tolerance * 2.0) {
-            derivative = error - prevError; // dt baked into kD
+            derivative = error - prevError;
         }
         prevError = error;
-        //PD Controller Equation
-        output = kP * error + kD * derivative;
 
-        // clamp to max
-        if (output > maxSpeed) output = maxSpeed;
-        if (output < -maxSpeed) output = -maxSpeed;
+        double forward = kP * error + kD * derivative;
 
-        // enforce minimum speed (only if we're not basically done)
-        if (std::fabs(output) < minSpeed && std::fabs(error) > tolerance) {
-            output = (output >= 0 ? minSpeed : -minSpeed);
+        // Clamp forward
+        if (forward > maxSpeed) forward = maxSpeed;
+        if (forward < -maxSpeed) forward = -maxSpeed;
+
+        // Enforce minimum speed only if not basically done
+        if (std::fabs(forward) < minSpeed && std::fabs(error) > tolerance) {
+            forward = (forward >= 0 ? minSpeed : -minSpeed);
         }
 
-        chassis.tank((int)output, (int)output, true);
+        // Heading hold
+        double headingError = normalizeAngleDeg(targetHeading - cur.theta);
+        double turn = kHeadingP * headingError;
+
+        // Combine
+        double left  = forward + turn;
+        double right = forward - turn;
+
+        // Final clamp
+        if (left > maxSpeed) left = maxSpeed;
+        if (left < -maxSpeed) left = -maxSpeed;
+        if (right > maxSpeed) right = maxSpeed;
+        if (right < -maxSpeed) right = -maxSpeed;
+
+        chassis.tank((int)left, (int)right, true);
         pros::delay(loopDelay);
     }
 

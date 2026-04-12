@@ -106,7 +106,7 @@ lemlib::Chassis chassis(drivetrain, linearController, angularController,
 int autoMode = RUN_THIS_AUTO - 1;
 int maxAutoMode = TOTAL_AUTONOMOUS_ROUTES - 1;
 std::string autoType[] = {
-    "Left Quals Auto", "Right Quals Auto", "Win Point Auto",
+    "Left 7 Auto", "Right 7 Auto", "Win Point Auto",
     "Left Elims Auto", "Right Elims Auto", "Tuning Auto",
     "Skills Auto",     "Left Rush Auto",   "Right Rush Auto"};
 
@@ -152,10 +152,10 @@ void autonomous() {
   chassis.setBrakeMode(pros::E_MOTOR_BRAKE_BRAKE);
   switch (autoMode) {
   case 0:
-    leftQualsAuto();
+    left7Auto();
     break;
   case 1:
-    rightQualsAuto();
+    right7Auto();
     break;
   case 2:
     fullWPAuto();

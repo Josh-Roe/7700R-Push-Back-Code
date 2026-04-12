@@ -71,15 +71,15 @@ inline void applyScoringMode(ScoringMode mode)
         bottomStageFull.move_voltage(12000);
         bottomStageHalf.move_voltage(12000);
         topStage.move_voltage(-12000);
-        hoodPiston.set_value(false);
+        hoodPiston.set_value(true);
         break;
 
     case ScoringMode::SKILLS:
     topStage.set_brake_mode(MOTOR_BRAKE_COAST);
-        bottomStageFull.move_voltage(7000);
-        bottomStageHalf.move_voltage(7000);
-        topStage.move_voltage(-7000);
-        hoodPiston.set_value(false);
+        bottomStageFull.move_voltage(6000);
+        bottomStageHalf.move_voltage(6000);
+        topStage.move_voltage(-6000);
+        hoodPiston.set_value(true);
         break;
 
     case ScoringMode::NONE:
@@ -332,9 +332,9 @@ inline void scoring_task(void * /*param*/)
                     break;
 
                 case ScoringMode::SKILLS:
-                    bottomStageFull.move_voltage(7000);
-                    bottomStageHalf.move_voltage(7000);
-                    hoodPiston.set_value(false);
+                    bottomStageFull.move_voltage(6000);
+                    bottomStageHalf.move_voltage(6000);
+                    hoodPiston.set_value(true);
                     break;
 
                 case ScoringMode::NONE:
