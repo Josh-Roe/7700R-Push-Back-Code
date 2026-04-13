@@ -290,7 +290,7 @@ inline bool runOdomCalibrationTrial(double targetDeg,
 // ========================================================================
 
 inline void resetOnPark(){
-      chassis.setPose({float(72-(distance_sensor_back.get() / 25.4f) - 14.0), float(-72+(distance_sensor_left.get() / 25.4f) + 7.5), chassis.getPose().theta});
+      chassis.setPose({float(72-(distance_sensor_back.get() / 25.4f) - 5.5), float(-72+(distance_sensor_left.get() / 25.4f) + 7.5), chassis.getPose().theta});
         pros::lcd::print(5, "X: %.2f Y: %.2f", chassis.getPose().x, chassis.getPose().y);
 }
 

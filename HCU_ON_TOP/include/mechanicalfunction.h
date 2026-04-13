@@ -98,15 +98,12 @@ inline void setScoringMode(const std::string &mode)
     ScoringMode previousMode = requestedMode;
 
     if (mode == "INTAKE")
-    {
-        requestedMode = ScoringMode::INTAKE;
+{
+    requestedMode = ScoringMode::INTAKE;
 
-        // Every time we ENTER intake, start fresh torque detection
-        if (previousMode != ScoringMode::INTAKE)
-        {
-            intakeTopStoppedByTorque = false;
-        }
-    }
+    // Always restart top roller latch whenever INTAKE is requested
+    intakeTopStoppedByTorque = false;
+}
     else if (mode == "OUTTAKE")
     {
         requestedMode = ScoringMode::OUTTAKE;
@@ -172,7 +169,7 @@ inline void scoring_task(void * /*param*/)
 
     constexpr uint32_t TOP_ROLLER_DELAY_MS = 0;
     constexpr double TOP_SPIKE_TORQUE = 0.5;
-    constexpr uint32_t TOP_SPIKE_MS = 50;
+    constexpr uint32_t TOP_SPIKE_MS = 100;
 
     uint32_t topTorqueStart = 0;
 

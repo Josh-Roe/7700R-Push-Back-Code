@@ -11,6 +11,7 @@ inline void usercontrol()
     startFixPoseTask();
     start_scoring_task();
     chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
+    preroller_tog();
 
     while (true)
     {
