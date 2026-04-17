@@ -4,6 +4,7 @@
 #include "mechanicalfunction.h"
 #include "settings.h"
 #include "usercontroller.h"
+#include "auton_selector.h"
 // CONTROLLER SET UP
 pros::Controller controller(pros::E_CONTROLLER_MASTER);
 
@@ -103,45 +104,24 @@ lemlib::ExpoDriveCurve
 lemlib::Chassis chassis(drivetrain, linearController, angularController,
                         sensors, &throttleCurve, &steerCurve);
 
-int autoMode = RUN_THIS_AUTO - 1;
-int maxAutoMode = TOTAL_AUTONOMOUS_ROUTES - 1;
-std::string autoType[] = {
-    "Left 7 Auto", "Right 7 Auto", "Win Point Auto",
-    "Left Elims Auto", "Right Elims Auto", "Tuning Auto",
-    "Skills Auto",     "Left Rush Auto",   "Right Rush Auto"};
-
-void changeAuto() {
-  if (autoMode < maxAutoMode) {
-    autoMode++;
-  } else {
-    autoMode = 0;
-  }
-}
-
 void initialize() {
-  pros::lcd::initialize();
-  chassis.calibrate();
-  chassis.setPose({0, 0, 0});
-  bottomStageFull.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
-  bottomStageHalf.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
-  topStage.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
-  start_scoring_task();
-  setScoringMode("NONE");
-  // SCREEN DISPLAY
-  pros::Task screenTask([&]() {
-    while (true) {
-      pros::lcd::print(0, "X: %f", chassis.getPose().x);
-      pros::lcd::print(1, "Y: %f", chassis.getPose().y);
-      pros::lcd::print(2, "Theta: %f", chassis.getPose().theta);
-
-      // log position telemetry
-      lemlib::telemetrySink()->info("Chassis pose: {}", chassis.getPose());
-
-      pros::lcd::print(5, "Auto Selected: %s", autoType[autoMode]);
-      pros::lcd::register_btn0_cb(changeAuto);
-      pros::delay(50);
-    }
-  });
+    chassis.calibrate();
+    chassis.setPose({0, 0, 0});
+    bottomStageFull.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+    bottomStageHalf.set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
+    topStage.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
+    start_scoring_task();
+    setScoringMode("NONE");
+    selector.add(left7Auto, "Left 7 Auto");
+    selector.add(right7Auto, "Right 7 Auto");
+    selector.add(fullWPAuto, "Win Point Auto");
+    selector.add(leftElimsAuto, "Left Elims Auto");
+    selector.add(rightElimsAuto, "Right Elims Auto");
+    selector.add(tuningAuto, "Tuning Auto");
+    selector.add(skillsAuto, "Skills Auto");
+    selector.add(leftRush, "Left Rush Auto");
+    selector.add(rightRush, "Right Rush Auto");
+    selector.init(&chassis);
 }
 
 void disabled() {}
@@ -150,39 +130,7 @@ void competition_initialize() {}
 
 void autonomous() {
   chassis.setBrakeMode(pros::E_MOTOR_BRAKE_BRAKE);
-  switch (autoMode) {
-  case 0:
-    left7Auto();
-    break;
-  case 1:
-    right7Auto();
-    break;
-  case 2:
-    fullWPAuto();
-    break;
-  case 3:
-    leftElimsAuto();
-    break;
-  case 4:
-    rightElimsAuto();
-    break;
-
-  case 5:
-    tuningAuto();
-    break;
-
-  case 6:
-    skillsAuto();
-    break;
-
-  case 7:
-    leftRush();
-    break;
-
-  case 8:
-    rightRush();
-    break;
-  }
+  selector.runSelected();
 }
 
 void opcontrol() { 

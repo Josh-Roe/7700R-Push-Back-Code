@@ -97,7 +97,7 @@ inline void applyScoringMode(ScoringMode mode) {
     topStage.set_brake_mode(MOTOR_BRAKE_COAST);
     bottomStageFull.move_voltage(6000);
     bottomStageHalf.move_voltage(6000);
-    topStage.move_voltage(-2000);
+    topStage.move_voltage(-1000);
     hoodPiston.set_value(true);
     break;
 
@@ -244,7 +244,7 @@ inline void scoring_task(void * /*param*/) {
     } else if (requestedMode == ScoringMode::SKILLS) {
       topStage.move_voltage(-6000);
     } else if (requestedMode == ScoringMode::SKILLSSLOW) {
-      topStage.move_voltage(-2000);
+      topStage.move_voltage(-1000);
     } else if (requestedMode == ScoringMode::OUTTAKE) {
       topStage.move_voltage(-12000);
     } else if (requestedMode == ScoringMode::INTAKE) {
@@ -325,8 +325,8 @@ inline void scoring_task(void * /*param*/) {
         case ScoringMode::SKILLS:
           if (skillsSequenceActive &&
               (pros::millis() - skillsStartTime < 100)) {
-            bottomStageFull.move_voltage(-4000);
-            bottomStageHalf.move_voltage(-4000);
+            bottomStageFull.move_voltage(-8000);
+            bottomStageHalf.move_voltage(-8000);
           } else {
             skillsSequenceActive = false;
             bottomStageFull.move_voltage(8000);
@@ -338,8 +338,8 @@ inline void scoring_task(void * /*param*/) {
         case ScoringMode::SKILLSSLOW:
           if (skillsSlowSequenceActive &&
               (pros::millis() - skillsSlowStartTime < 350)) {
-            bottomStageFull.move_voltage(-4000);
-            bottomStageHalf.move_voltage(-4000);
+            bottomStageFull.move_voltage(-8000);
+            bottomStageHalf.move_voltage(-8000);
           } else {
             skillsSlowSequenceActive = false;
             bottomStageFull.move_voltage(8000);

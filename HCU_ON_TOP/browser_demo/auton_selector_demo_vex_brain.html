@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VEX Brain Autonomous Selector Demo</title>
+  <style>
+    :root {
+      --screen-w: 480px;
+      --screen-h: 240px;
+      --pad: 10px;
+      --left-w: 180px;
+      --panel-bg: #1e1e1e;
+      --screen-bg: #111111;
+      --border: #3a3a3a;
+      --text: #f2f2f2;
+      --muted: #cfcfcf;
+      --selected: #2e8b57;
+      --confirmed: #3a6ea5;
+      --button: #303030;
+      --disabled: #777777;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #0b1020;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      padding: 24px;
+    }
+
+    .wrap {
+      display: grid;
+      gap: 14px;
+      justify-items: center;
+    }
+
+    .caption {
+      font-size: 14px;
+      color: #d6d6d6;
+    }
+
+    .brain {
+      width: calc(var(--screen-w) + 28px);
+      padding: 14px;
+      border-radius: 18px;
+      background: #2a2a2a;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    }
+
+    .screen {
+      position: relative;
+      width: var(--screen-w);
+      height: var(--screen-h);
+      background: var(--screen-bg);
+      overflow: hidden;
+      border-radius: 6px;
+    }
+
+    .left, .right {
+      position: absolute;
+      top: var(--pad);
+      height: calc(var(--screen-h) - 2 * var(--pad));
+      background: var(--panel-bg);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .left {
+      left: var(--pad);
+      width: var(--left-w);
+      padding: 8px;
+    }
+
+    .right {
+      left: calc(var(--left-w) + 2 * var(--pad));
+      width: calc(var(--screen-w) - var(--left-w) - 3 * var(--pad));
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .title {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+
+    .pose-line {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    .confirm {
+      position: absolute;
+      left: 8px;
+      bottom: 52px;
+      width: calc(var(--left-w) - 16px);
+      height: 42px;
+      border: none;
+      border-radius: 8px;
+      background: var(--selected);
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .confirm:disabled {
+      background: var(--disabled);
+      cursor: not-allowed;
+    }
+
+    .status {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      width: calc(var(--left-w) - 16px);
+      font-size: 14px;
+      line-height: 1.2;
+      color: var(--muted);
+    }
+
+    .list {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 2px;
+    }
+
+    .item {
+      min-height: 44px;
+      border: none;
+      border-radius: 8px;
+      background: var(--button);
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .item.selected { background: var(--selected); }
+    .item.confirmed { background: var(--confirmed); }
+    .item:disabled {
+      opacity: 1;
+      cursor: not-allowed;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .controls button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="caption">VEX Brain autonomous selector demo — 480 × 240, matching your selector layout.</div>
+
+    <div class="brain">
+      <div class="screen" id="screen">
+        <div class="left">
+          <div class="title">Robot Pose</div>
+          <div class="pose-line" id="poseX">X: 0.00</div>
+          <div class="pose-line" id="poseY">Y: 0.00</div>
+          <div class="pose-line" id="poseTheta">Theta: 0.00</div>
+
+          <button class="confirm" id="confirmBtn">Confirm</button>
+          <div class="status" id="statusText">Selected: Red Left Safe</div>
+        </div>
+
+        <div class="right">
+          <div class="list" id="list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="resetBtn">Reset Demo</button>
+      <button id="poseBtn">Move Pose</button>
+    </div>
+  </div>
+
+  <script>
+    const entries = [
+      'Red Left Safe',
+      'Red Left Rush',
+      'Red Right Goal',
+      'Blue Left Safe',
+      'Blue Left Rush',
+      'Blue Right Goal',
+      'Skills',
+      'Programming Skills',
+      'AWP Test',
+      'No Auto',
+      'Drive Test',
+      'Elims Left',
+      'Elims Right'
+    ];
+
+    let selectedIndex = 0;
+    let confirmedIndex = -1;
+    let confirmed = false;
+    let pose = { x: 0, y: 0, theta: 0 };
+
+    const listEl = document.getElementById('list');
+    const confirmBtn = document.getElementById('confirmBtn');
+    const statusText = document.getElementById('statusText');
+    const poseX = document.getElementById('poseX');
+    const poseY = document.getElementById('poseY');
+    const poseTheta = document.getElementById('poseTheta');
+    const resetBtn = document.getElementById('resetBtn');
+    const poseBtn = document.getElementById('poseBtn');
+
+    function refreshPose() {
+      poseX.textContent = `X: ${pose.x.toFixed(2)}`;
+      poseY.textContent = `Y: ${pose.y.toFixed(2)}`;
+      poseTheta.textContent = `Theta: ${pose.theta.toFixed(2)}`;
+    }
+
+    function refreshStatus() {
+      if (entries.length === 0) {
+        statusText.textContent = 'No autonomous routines added';
+        confirmBtn.disabled = true;
+        return;
+      }
+
+      if (confirmed) {
+        statusText.textContent = `Running autonomous ${entries[confirmedIndex]}`;
+        confirmBtn.disabled = true;
+      } else {
+        statusText.textContent = `Selected: ${entries[selectedIndex]}`;
+        confirmBtn.disabled = false;
+      }
+    }
+
+    function refreshList() {
+      listEl.innerHTML = '';
+      entries.forEach((name, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'item';
+        if (confirmed && i === confirmedIndex) btn.classList.add('confirmed');
+        else if (i === selectedIndex) btn.classList.add('selected');
+        btn.textContent = name;
+        btn.disabled = confirmed;
+        btn.addEventListener('click', () => {
+          if (confirmed) return;
+          selectedIndex = i;
+          refreshList();
+          refreshStatus();
+        });
+        listEl.appendChild(btn);
+      });
+    }
+
+    confirmBtn.addEventListener('click', () => {
+      if (confirmed || entries.length === 0) return;
+      confirmed = true;
+      confirmedIndex = selectedIndex;
+      refreshList();
+      refreshStatus();
+    });
+
+    resetBtn.addEventListener('click', () => {
+      selectedIndex = 0;
+      confirmedIndex = -1;
+      confirmed = false;
+      pose = { x: 0, y: 0, theta: 0 };
+      refreshPose();
+      refreshList();
+      refreshStatus();
+    });
+
+    poseBtn.addEventListener('click', () => {
+      pose.x += 3.25;
+      pose.y += 1.75;
+      pose.theta = (pose.theta + 17.5) % 360;
+      refreshPose();
+    });
+
+    refreshPose();
+    refreshList();
+    refreshStatus();
+  </script>
+</body>
+</html>
