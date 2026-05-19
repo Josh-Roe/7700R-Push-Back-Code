@@ -13,6 +13,8 @@ inline void usercontrol()
     chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
     preroller_tog();
 
+    bool lastR1 = false;
+
     while (true)
     {
         chassis.setBrakeMode(pros::E_MOTOR_BRAKE_COAST);
@@ -46,6 +48,13 @@ inline void usercontrol()
         {
             setScoringMode("NONE");
         }
+
+        // Reset intake top roller latch when R1 is released
+        if (lastR1 && !r1Now)
+        {
+            notifyIntakeReleased();
+        }
+        lastR1 = r1Now;
 
         bool scraperState = controller.get_digital(pros::E_CONTROLLER_DIGITAL_Y);
         scraper.set_value(scraperState);

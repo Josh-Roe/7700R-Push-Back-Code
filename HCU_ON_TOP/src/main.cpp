@@ -89,15 +89,15 @@ lemlib::OdomSensors sensors(nullptr, // vertical tracking wheel
 // DRIVER CONTROLLER THROTTLE
 lemlib::ExpoDriveCurve
     throttleCurve(3,    // joystick deadband out of 127
-                  10,   // minimum output where drivetrain will move out of 127
-                  1.019 // expo curve gain
+                  15,   // minimum output where drivetrain will move out of 127
+                  1.01 // expo curve gain
     );
 
 // DRIVER CONTROLLER STEER
 lemlib::ExpoDriveCurve
     steerCurve(3,    // joystick deadband out of 127
-               10,   // minimum output where drivetrain will move out of 127
-               1.019 // expo curve gain
+               15,   // minimum output where drivetrain will move out of 127
+               1.01 // expo curve gain
     );
 
 // CHASSIS CREATION
