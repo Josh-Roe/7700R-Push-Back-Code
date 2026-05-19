@@ -23,6 +23,7 @@ pros::Rotation verticalEnc(VERTICAL_ROTATION_ODOM);
 pros::Distance distance_sensor_left(DISTANCE_SENSOR_LEFT);
 pros::Distance distance_sensor_right(DISTANCE_SENSOR_RIGHT);
 pros::Distance distance_sensor_back(DISTANCE_SENSOR_BACK);
+pros::Distance distance_sensor_front(DISTANCE_SENSOR_FRONT);
 
 // OTHER MOTORS SET UP
 pros::Motor bottomStageFull(BOT_STAGE_FULL, pros::MotorGearset::blue,

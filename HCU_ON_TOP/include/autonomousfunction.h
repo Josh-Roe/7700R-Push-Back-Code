@@ -407,12 +407,122 @@ inline void calibrateOdomGeometry() {
 }
 
 
+inline double _wrapRad(double a) {
+    while (a > M_PI) a -= 2.0 * M_PI;
+    while (a < -M_PI) a += 2.0 * M_PI;
+    return a;
+}
+
+inline double _wrapDeg(double a) {
+    while (a > 180.0) a -= 360.0;
+    while (a <= -180.0) a += 360.0;
+    return a;
+}
+
+inline double _clampDouble(double v, double lo, double hi) {
+    return std::max(lo, std::min(v, hi));
+}
+
+inline double _sgn(double v) {
+    return (v >= 0.0) ? 1.0 : -1.0;
+}
+
+inline int _motorCmd(double v) {
+    return static_cast<int>(std::round(_clampDouble(v, -127.0, 127.0)));
+}
+
+inline double _sinc(double x) {
+    return (std::fabs(x) < 1e-6) ? 1.0 : std::sin(x) / x;
+}
+
+inline double _angleMeanDeg(double aDeg, double bDeg, double alpha) {
+    return _wrapDeg(aDeg + alpha * _wrapDeg(bDeg - aDeg));
+}
+
+// LemLib convention in your code:
+// 0 deg = +Y, +90 deg = +X.
+// Positive turn should increase heading, so:
+// left = forward + turn, right = forward - turn.
+inline void _tankFromVTurn(double v, double turn, double maxSpeed, double minSpeed, double errorForMinSpeed) {
+    maxSpeed = _clampDouble(maxSpeed, 1.0, 127.0);
+
+    double leftCmd  = v + turn;
+    double rightCmd = v - turn;
+
+    double maxMag = std::max(std::fabs(leftCmd), std::fabs(rightCmd));
+    if (maxMag > maxSpeed && maxMag > 1e-6) {
+        double scale = maxSpeed / maxMag;
+        leftCmd *= scale;
+        rightCmd *= scale;
+    }
+
+    if (minSpeed > 0.0 && std::fabs(errorForMinSpeed) > 0.05) {
+        if (std::fabs(leftCmd) > 1e-6 && std::fabs(leftCmd) < minSpeed) {
+            leftCmd = _sgn(leftCmd) * minSpeed;
+        }
+        if (std::fabs(rightCmd) > 1e-6 && std::fabs(rightCmd) < minSpeed) {
+            rightCmd = _sgn(rightCmd) * minSpeed;
+        }
+    }
+
+    maxMag = std::max(std::fabs(leftCmd), std::fabs(rightCmd));
+    if (maxMag > maxSpeed && maxMag > 1e-6) {
+        double scale = maxSpeed / maxMag;
+        leftCmd *= scale;
+        rightCmd *= scale;
+    }
+
+    chassis.tank(_motorCmd(leftCmd), _motorCmd(rightCmd), true);
+}
+
+inline void _poseErrorRobotFrame(
+    double targetX,
+    double targetY,
+    bool useFinalHeading,
+    double targetThetaDeg,
+    bool backwards,
+    double finalHeadingSwitchDist,
+    double& forwardErr,
+    double& sideErr,
+    double& headingErrRad,
+    double& posErr,
+    double& desiredThetaRad
+) {
+    constexpr double DEG2RAD = M_PI / 180.0;
+
+    lemlib::Pose cur = chassis.getPose();
+    double theta = cur.theta * DEG2RAD;
+
+    double dx = targetX - cur.x;
+    double dy = targetY - cur.y;
+
+    double pointTheta = backwards ? std::atan2(-dx, -dy) : std::atan2(dx, dy);
+    posErr = std::sqrt(dx * dx + dy * dy);
+
+    if (useFinalHeading && posErr <= finalHeadingSwitchDist) {
+        desiredThetaRad = targetThetaDeg * DEG2RAD;
+    } else {
+        desiredThetaRad = pointTheta;
+    }
+
+    headingErrRad = _wrapRad(desiredThetaRad - theta);
+
+    double sinT = std::sin(theta);
+    double cosT = std::cos(theta);
+
+    forwardErr = dx * sinT + dy * cosT;
+    sideErr = -dx * cosT + dy * sinT;
+}
+
+// ========================================================================
+// RAMSETE
+// ========================================================================
 
 struct RamseteParamsPublic {
-    bool forwards = true;     // true = forward, false = backwards
-    double minSpeed = 0;      // minimum motor output
-    double maxSpeed = 127;    // maximum motor output
-    bool async = false;       // async = return immediately, sync = wait until settled
+    bool forwards = true;
+    double minSpeed = 0;
+    double maxSpeed = 127;
+    bool async = false;
 };
 
 struct RamseteParamsInternal {
@@ -426,210 +536,119 @@ struct RamseteParamsInternal {
     double maxSpeed;
 };
 
+inline pros::Task* RamseteTask = nullptr;
+inline volatile bool RamseteActive = false;
+inline volatile bool RamseteHasCmd = false;
+inline volatile bool RamseteCancel = false;
+inline RamseteParamsInternal RamseteCmd{};
 
-// ================== RAMSETE CORE (your existing code) ==================
-inline void _ramseteCore(double targetX, double targetY,
-                         bool useFinalHeading, double targetThetaDeg,
-                         bool backwards,
-                         int timeout, double minSpeed, double maxSpeed) {
-    // Ramsete-style params
-    const double b    = BETA;
+inline void _ramseteCore(
+    double targetX,
+    double targetY,
+    bool useFinalHeading,
+    double targetThetaDeg,
+    bool backwards,
+    int timeout,
+    double minSpeed,
+    double maxSpeed
+) {
+    constexpr double RAD2DEG = 180.0 / M_PI;
+
+    const double b = BETA;
     const double zeta = ZETA;
+    const double kV = KV;
+    const double kMax = KMAX;
 
-    // "Virtual" forward velocity gain
-    const double kV      = KV;
-    const double maxVCmd = maxSpeed * 0.6; // don't try to use full power from v_d
-    const double kMax    = KMAX;
+    const double posTolInches = LATERAL_SMALL_ERROR / 2.0;
+    const double thetaTolDeg = ANGULAR_SMALL_ERROR / 2.0;
+    const double finalSwitch = 7.0;
 
-    // Exit conditions
-    const double posTolInches   = LATERAL_SMALL_ERROR / 2;
-    const double thetaTolDeg    = ANGULAR_SMALL_ERROR / 2;
-    const int    smallErrorTime = LATERAL_SMALL_ERROR_TIMEOUT;
-    const int    loopDelay      = 10;
+    const int settleTimeMs = LATERAL_SMALL_ERROR_TIMEOUT;
+    const int loopDelayMs = 10;
 
-    const double DEG2RAD = M_PI / 180.0;
-    const double RAD2DEG = 180.0 / M_PI;
+    uint32_t startTime = pros::millis();
+    uint32_t settleStart = 0;
+    RamseteCancel = false;
 
-    uint32_t startTime             = pros::millis();
-    uint32_t withinSmallErrorStart = 0;
+    while (!RamseteCancel && pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
+        double xErr = 0.0;
+        double yErr = 0.0;
+        double thetaErr = 0.0;
+        double posErr = 0.0;
+        double desiredTheta = 0.0;
 
-    while (pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
-        // ---- Current pose ----
-        lemlib::Pose cur = chassis.getPose();
-        double x     = cur.x;
-        double y     = cur.y;
-        double theta = cur.theta * DEG2RAD; // radians
+        _poseErrorRobotFrame(
+            targetX,
+            targetY,
+            useFinalHeading,
+            targetThetaDeg,
+            backwards,
+            finalSwitch,
+            xErr,
+            yErr,
+            thetaErr,
+            posErr,
+            desiredTheta
+        );
 
-        // ---- Global error ----
-        double dx = targetX - x;
-        double dy = targetY - y;
+        double finalHeadingErrDeg = _wrapDeg(targetThetaDeg - chassis.getPose().theta);
 
-        // Pick desired heading
-        double targetThetaRad;
-        if (useFinalHeading) {
-            targetThetaRad = targetThetaDeg * DEG2RAD;
+        bool closeToPoint = posErr < posTolInches;
+        bool headingGood = (!useFinalHeading) || std::fabs(finalHeadingErrDeg) < thetaTolDeg;
+
+        if (closeToPoint && headingGood) {
+            if (settleStart == 0) settleStart = pros::millis();
+            if (pros::millis() - settleStart >= static_cast<uint32_t>(settleTimeMs)) break;
         } else {
-            // 0° = +Y ⇒ bearing = atan2(dx, dy)
-            if (!backwards) {
-                targetThetaRad = std::atan2(dx, dy);     // face toward point
-            } else {
-                targetThetaRad = std::atan2(-dx, -dy);   // face away, drive backward
-            }
+            settleStart = 0;
         }
 
-        // Angle error wrapped to [-pi, pi]
-        double dtheta = targetThetaRad - theta;
-        while (dtheta >  M_PI) dtheta -= 2.0 * M_PI;
-        while (dtheta < -M_PI) dtheta += 2.0 * M_PI;
+        double thetaErrDeg = thetaErr * RAD2DEG;
 
-        // ---- Transform error into robot frame (LemLib frame) ----
-        // x = left/right (right +), y = forward/back (forward +), 0° = +Y
-        // forward unit = (sinθ, cosθ)
-        // left    unit = (-cosθ, sinθ)
-        double cosT = std::cos(theta);
-        double sinT = std::sin(theta);
-
-        double x_e    = dx * sinT + dy * cosT;      // forward error
-        double y_e    = -dx * cosT + dy * sinT;     // left error
-        double theta_e = dtheta;
-
-        // ---- Tolerances ----
-        double posErr      = std::sqrt(x_e * x_e + y_e * y_e);
-        double thetaErrDeg = std::fabs(theta_e * RAD2DEG);
-
-        bool posGood   = posErr < posTolInches;
-        bool thetaGood = (!useFinalHeading) || (thetaErrDeg < thetaTolDeg);
-
-        if (posGood && thetaGood) {
-            if (withinSmallErrorStart == 0)
-                withinSmallErrorStart = pros::millis();
-            if (pros::millis() - withinSmallErrorStart >= (uint32_t)smallErrorTime)
-                break; // done
-        } else {
-            withinSmallErrorStart = 0;
+        if (std::fabs(thetaErrDeg) > 85.0 && posErr > 3.0) {
+            double turn = _clampDouble(0.8 * thetaErrDeg, -maxSpeed, maxSpeed);
+            _tankFromVTurn(0.0, turn, maxSpeed, minSpeed, thetaErrDeg);
+            pros::delay(loopDelayMs);
+            continue;
         }
 
-        // ================== HEADING-ONLY MODE FOR LARGE ANGLE ERROR ==================
-        {
-            // Threshold where we stop trying to drive and just fix heading
-            const double HEADING_ONLY_DEG = 90.0;   // tune if needed
-            // Proportional gain: deg of error -> motor command
-            const double K_TURN_DEG       = 0.8;    // tune 0.5–1.0
+        double vRef = kV * posErr;
+        double maxVRef = maxSpeed * 0.65;
+        vRef = _clampDouble(vRef, 0.0, maxVRef);
+        if (backwards) vRef = -vRef;
 
-            double signedThetaErrDeg = theta_e * RAD2DEG;
-            double absThetaErrDeg    = std::fabs(signedThetaErrDeg);
+        double wRef = 0.0;
+        double k = std::min(2.0 * zeta * std::sqrt(wRef * wRef + b * vRef * vRef), kMax);
 
-            if (absThetaErrDeg > HEADING_ONLY_DEG) {
-                // Simple P controller on heading
-                double turnCmd = absThetaErrDeg * K_TURN_DEG;
+        double v = vRef * std::cos(thetaErr) + k * xErr;
+        double w = wRef + k * thetaErr + b * vRef * _sinc(thetaErr) * yErr;
 
-                // Clamp to available range
-                if (turnCmd > maxSpeed) turnCmd = maxSpeed;
-                if (minSpeed > 0 && turnCmd < minSpeed) turnCmd = minSpeed;
+        double turn = w * (TRACKWIDTH / 2.0);
 
-                // Direction: sign decides spin direction (shortest path because of angle wrap)
-                turnCmd *= (signedThetaErrDeg > 0 ? 1.0 : -1.0);
-
-                double leftCmd  = -turnCmd;
-                double rightCmd =  turnCmd;
-
-                chassis.tank(static_cast<int>(leftCmd), static_cast<int>(rightCmd), true);
-                pros::delay(loopDelay);
-                // Skip Ramsete math this loop; keep turning until heading is reasonable
-                continue;
-            }
-        }
-        // ============================================================================
-
-        // ---- "Virtual" desired velocities ----
-        // Forward speed magnitude grows with distance
-        double v_d = kV * posErr;
-        if (!backwards) {
-            if (v_d > maxVCmd) v_d = maxVCmd;
-        } else {
-            v_d = -v_d;
-            if (v_d < -maxVCmd) v_d = -maxVCmd;
-        }
-
-        double w_d = 0.0;
-
-        // ---- Ramsete gain (capped) ----
-        double k_raw = 2.0 * zeta * std::sqrt(b * v_d * v_d);
-        double k     = std::min(k_raw, kMax);
-
-        double sinThetaE  = std::sin(theta_e);
-        double sincThetaE = (std::fabs(theta_e) < 1e-6) ? 1.0 : (sinThetaE / theta_e);
-
-        // ---- Ramsete control law ----
-        double v = v_d * std::cos(theta_e) + k * x_e;
-        double w = w_d + k * theta_e + b * v_d * sincThetaE * y_e;
-
-        // Forward-only mode: don't let v go negative
-        // if (!backwards && v < 0) {
-        //     v = 0;
-        // }
-
-        // ---- Convert to left/right commands ----
-        double leftCmd  = v - w * (TRACKWIDTH / 2.0);
-        double rightCmd = v + w * (TRACKWIDTH / 2.0);
-
-        // Normalize to maxSpeed
-        double maxMag = std::max(std::fabs(leftCmd), std::fabs(rightCmd));
-        if (maxMag > maxSpeed && maxMag > 1e-6) {
-            double scale = maxSpeed / maxMag;
-            leftCmd  *= scale;
-            rightCmd *= scale;
-        }
-
-        // Small deadband so it doesn't stall just outside tolerance
-        if (posErr > posTolInches && minSpeed > 0) {
-            if (std::fabs(leftCmd) < minSpeed) {
-                leftCmd = (leftCmd >= 0 ? 1 : -1) * minSpeed;
-            }
-            if (std::fabs(rightCmd) < minSpeed) {
-                rightCmd = (rightCmd >= 0 ? 1 : -1) * minSpeed;
-            }
-        }
-
-        chassis.tank(static_cast<int>(leftCmd), static_cast<int>(rightCmd), true);
-        pros::delay(loopDelay);
+        _tankFromVTurn(v, turn, maxSpeed, minSpeed, posErr);
+        pros::delay(loopDelayMs);
     }
 
     chassis.tank(0, 0, true);
 }
 
-// ================== ASYNC WRAPPER + WAIT LOGIC ==================
-
-// Forward declaration of task function so ensureRamseteTask can see it
 inline void RamseteTaskFn(void*);
 
-// ================== SINGLE PERSISTENT RAMSETE TASK ==================
-
-inline pros::Task*           RamseteTask   = nullptr;
-inline bool                  RamseteActive = false;   // currently executing a command
-inline RamseteParamsInternal RamseteCmd{};            // latest command
-inline bool                  RamseteHasCmd = false;   // command waiting/being run
-
-// Ensure the persistent Ramsete task exists
 inline void ensureRamseteTask() {
     if (RamseteTask == nullptr) {
         RamseteTask = new pros::Task(RamseteTaskFn, nullptr, "Ramsete");
-        // Debug: if creation fails (out of task slots), warn on LCD
-        if (RamseteTask == nullptr) {
-            pros::lcd::print(7, "Ramsete task create FAIL");
-        }
+        if (RamseteTask == nullptr) pros::lcd::print(7, "Ramsete task FAIL");
     }
 }
 
-// Cancel the movement if necessary
 inline void cancelRamsete() {
-    RamseteHasCmd  = false;
-    RamseteActive  = false;
+    RamseteCancel = true;
+    RamseteHasCmd = false;
+    RamseteActive = false;
     chassis.tank(0, 0, true);
 }
 
-// Ramsete task function: runs forever, executes commands when present
-inline void RamseteTaskFn(void* /*unused*/) {
+inline void RamseteTaskFn(void*) {
     while (true) {
         if (RamseteHasCmd) {
             RamseteActive = true;
@@ -645,237 +664,188 @@ inline void RamseteTaskFn(void* /*unused*/) {
                 RamseteCmd.maxSpeed
             );
 
-            RamseteHasCmd  = false; // done with this command
-            RamseteActive  = false;
+            RamseteHasCmd = false;
+            RamseteActive = false;
         }
 
         pros::delay(5);
     }
 }
 
-
-// ================== RAMSETE PUBLIC API (SYNC + ASYNC) ==================
-
-// go to a point (no final heading)
-inline void RamseteToPoint(double targetX, double targetY,
-                           int timeout = 2000,
-                           RamseteParamsPublic params = {}) {
+inline void RamseteToPoint(
+    double targetX,
+    double targetY,
+    int timeout = 2000,
+    RamseteParamsPublic params = {}
+) {
     ensureRamseteTask();
+    while (RamseteActive || RamseteHasCmd) pros::delay(5);
 
-    // If task couldn't be created (out of slots), just run synchronously
-    if (RamseteTask == nullptr) {
-        _ramseteCore(
-            targetX, targetY,
-            false,          // useFinalHeading
-            0.0,
-            !params.forwards,
-            timeout,
-            params.minSpeed,
-            params.maxSpeed > 0 ? params.maxSpeed : 127.0
-        );
-        return;
-    }
+    RamseteCmd = {
+        targetX,
+        targetY,
+        false,
+        0.0,
+        !params.forwards,
+        timeout,
+        params.minSpeed,
+        params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    };
 
-    // wait for any previous command to finish
-    while (RamseteActive) pros::delay(5);
-
-    // fill command struct
-    RamseteCmd.targetX         = targetX;
-    RamseteCmd.targetY         = targetY;
-    RamseteCmd.useFinalHeading = false;
-    RamseteCmd.targetThetaDeg  = 0.0;
-    RamseteCmd.backwards       = !params.forwards;      // backwards if forwards = false
-    RamseteCmd.timeout         = timeout;
-    RamseteCmd.minSpeed        = params.minSpeed;
-    RamseteCmd.maxSpeed        = (params.maxSpeed > 0) ? params.maxSpeed : 127.0;
-
-    RamseteHasCmd = true;
-
-    // sync mode: block until command finishes
-    if (!params.async) {
-        while (RamseteHasCmd) pros::delay(5);
-    }
-}
-
-// go to a pose (point + heading)
-inline void RamseteToPose(double targetX, double targetY, double targetThetaDeg,
-                          int timeout = 2000,
-                          RamseteParamsPublic params = {}) {
-    ensureRamseteTask();
-
-    if (RamseteTask == nullptr) {
-        _ramseteCore(
-            targetX, targetY,
-            true,
-            targetThetaDeg,
-            !params.forwards,
-            timeout,
-            params.minSpeed,
-            params.maxSpeed > 0 ? params.maxSpeed : 127.0
-        );
-        return;
-    }
-
-    while (RamseteActive) pros::delay(5);
-
-    RamseteCmd.targetX         = targetX;
-    RamseteCmd.targetY         = targetY;
-    RamseteCmd.useFinalHeading = true;
-    RamseteCmd.targetThetaDeg  = targetThetaDeg;
-    RamseteCmd.backwards       = !params.forwards;
-    RamseteCmd.timeout         = timeout;
-    RamseteCmd.minSpeed        = params.minSpeed;
-    RamseteCmd.maxSpeed        = (params.maxSpeed > 0) ? params.maxSpeed : 127.0;
-
+    RamseteCancel = false;
     RamseteHasCmd = true;
 
     if (!params.async) {
-        while (RamseteHasCmd) pros::delay(5);
+        while (RamseteHasCmd || RamseteActive) pros::delay(5);
     }
 }
-// =============================
-// SE2 PARAM STRUCTS
-// =============================
+
+inline void RamseteToPose(
+    double targetX,
+    double targetY,
+    double targetThetaDeg,
+    int timeout = 2000,
+    RamseteParamsPublic params = {}
+) {
+    ensureRamseteTask();
+    while (RamseteActive || RamseteHasCmd) pros::delay(5);
+
+    RamseteCmd = {
+        targetX,
+        targetY,
+        true,
+        targetThetaDeg,
+        !params.forwards,
+        timeout,
+        params.minSpeed,
+        params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    };
+
+    RamseteCancel = false;
+    RamseteHasCmd = true;
+
+    if (!params.async) {
+        while (RamseteHasCmd || RamseteActive) pros::delay(5);
+    }
+}
+
+// ========================================================================
+// SE2
+// ========================================================================
+
 struct SE2ParamsPublic {
-    bool   forwards = true;
+    bool forwards = true;
     double minSpeed = 0;
     double maxSpeed = 127;
-    bool   async    = false;
+    bool async = false;
 };
 
 struct SE2ParamsInternal {
     double targetX;
     double targetY;
-    bool   useFinalHeading;
+    bool useFinalHeading;
     double targetThetaDeg;
-    bool   backwards;
-    int    timeout;
+    bool backwards;
+    int timeout;
     double minSpeed;
     double maxSpeed;
 };
 
-// =============================
-// SE2 CORE USING KX, KY, KTH
-// =============================
-inline void _se2Core(double targetX, double targetY,
-                     bool useFinalHeading, double targetThetaDeg,
-                     bool backwards,
-                     int timeout, double minSpeed, double maxSpeed)
-{
-    const double posTolInches   = LATERAL_SMALL_ERROR/2;
-    const double thetaTolDeg    = ANGULAR_SMALL_ERROR/2;
-    const int    smallErrorTime = LATERAL_SMALL_ERROR_TIMEOUT;
-    const int    loopDelay      = 10;
+inline pros::Task* SE2Task = nullptr;
+inline volatile bool SE2Active = false;
+inline volatile bool SE2HasCmd = false;
+inline volatile bool SE2Cancel = false;
+inline SE2ParamsInternal SE2Cmd{};
 
-    const double DEG2RAD = M_PI / 180.0;
-    const double RAD2DEG = 180.0 / M_PI;
+inline void _se2Core(
+    double targetX,
+    double targetY,
+    bool useFinalHeading,
+    double targetThetaDeg,
+    bool backwards,
+    int timeout,
+    double minSpeed,
+    double maxSpeed
+) {
+    constexpr double RAD2DEG = 180.0 / M_PI;
 
-    uint32_t startTime             = pros::millis();
-    uint32_t withinSmallErrorStart = 0;
+    const double posTolInches = LATERAL_SMALL_ERROR / 2.0;
+    const double thetaTolDeg = ANGULAR_SMALL_ERROR / 2.0;
+    const double finalSwitch = 7.0;
 
-    while (pros::millis() - startTime < (uint32_t)timeout) {
-        lemlib::Pose cur = chassis.getPose();
-        double x     = cur.x;
-        double y     = cur.y;
-        double theta = cur.theta * DEG2RAD;
+    const int settleTimeMs = LATERAL_SMALL_ERROR_TIMEOUT;
+    const int loopDelayMs = 10;
 
-        double dx = targetX - x;
-        double dy = targetY - y;
+    uint32_t startTime = pros::millis();
+    uint32_t settleStart = 0;
+    SE2Cancel = false;
 
-        double targetThetaRad;
-        if (useFinalHeading) {
-            targetThetaRad = targetThetaDeg * DEG2RAD;
-        } else {
-            if (!backwards)
-                targetThetaRad = std::atan2(dx, dy);
-            else
-                targetThetaRad = std::atan2(-dx, -dy);
-        }
+    while (!SE2Cancel && pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
+        double forwardErr = 0.0;
+        double sideErr = 0.0;
+        double headingErr = 0.0;
+        double posErr = 0.0;
+        double desiredTheta = 0.0;
 
-        double dtheta = targetThetaRad - theta;
-        while (dtheta >  M_PI) dtheta -= 2.0 * M_PI;
-        while (dtheta < -M_PI) dtheta += 2.0 * M_PI;
+        _poseErrorRobotFrame(
+            targetX,
+            targetY,
+            useFinalHeading,
+            targetThetaDeg,
+            backwards,
+            finalSwitch,
+            forwardErr,
+            sideErr,
+            headingErr,
+            posErr,
+            desiredTheta
+        );
 
-        double cosT = std::cos(theta);
-        double sinT = std::sin(theta);
+        double finalHeadingErrDeg = _wrapDeg(targetThetaDeg - chassis.getPose().theta);
 
-        double forwardErr = dx * sinT + dy * cosT;
-        double leftErr    = -dx * cosT + dy * sinT;
-
-        double rho   = std::sqrt(forwardErr * forwardErr + leftErr * leftErr);
-        double alpha = std::atan2(leftErr, forwardErr);
-        double delta = dtheta;
-
-        double posErr      = rho;
-        double thetaErrDeg = std::fabs(delta * RAD2DEG);
-
-        bool posGood   = posErr < posTolInches;
-        bool thetaGood = (!useFinalHeading) || (thetaErrDeg < thetaTolDeg);
+        bool posGood = posErr < posTolInches;
+        bool thetaGood = (!useFinalHeading) || std::fabs(finalHeadingErrDeg) < thetaTolDeg;
 
         if (posGood && thetaGood) {
-            if (withinSmallErrorStart == 0)
-                withinSmallErrorStart = pros::millis();
-            if (pros::millis() - withinSmallErrorStart >= (uint32_t)smallErrorTime)
-                break;
+            if (settleStart == 0) settleStart = pros::millis();
+            if (pros::millis() - settleStart >= static_cast<uint32_t>(settleTimeMs)) break;
         } else {
-            withinSmallErrorStart = 0;
+            settleStart = 0;
         }
 
-        // ---- SE2 control (KX, KY, KTH) ----
-        double v = KX * rho * std::cos(alpha);
+        double headingErrDeg = headingErr * RAD2DEG;
 
-        double sinA = std::sin(alpha);
-        double cosA = std::cos(alpha);
-        double alphaSafe = (std::fabs(alpha) < 1e-6) ? 1.0 : alpha;
+        double v = KX * forwardErr;
+        double turn = KY * sideErr + KTH * headingErrDeg;
 
-        double w = KY * alpha
-                 + KX * (sinA * cosA / alphaSafe) * (alpha + KTH * delta);
-
-        if (backwards) v = -v;
-
-        double leftCmd  = v - w * (TRACKWIDTH / 2.0);
-        double rightCmd = v + w * (TRACKWIDTH / 2.0);
-
-        double maxMag = std::max(std::fabs(leftCmd), std::fabs(rightCmd));
-        if (maxMag > maxSpeed && maxMag > 1e-6) {
-            double scale = maxSpeed / maxMag;
-            leftCmd  *= scale;
-            rightCmd *= scale;
+        if (useFinalHeading && posErr < 3.0) {
+            v = 0.0;
+            turn = KTH * finalHeadingErrDeg;
         }
 
-        if (rho > posTolInches && minSpeed > 0) {
-            if (std::fabs(leftCmd) < minSpeed)
-                leftCmd = (leftCmd >= 0 ? 1 : -1) * minSpeed;
-            if (std::fabs(rightCmd) < minSpeed)
-                rightCmd = (rightCmd >= 0 ? 1 : -1) * minSpeed;
-        }
+        if (!backwards && v < 0.0 && posErr > 2.0) v = 0.0;
+        if (backwards && v > 0.0 && posErr > 2.0) v = 0.0;
 
-        chassis.tank(static_cast<int>(leftCmd), static_cast<int>(rightCmd), true);
-        pros::delay(loopDelay);
+        _tankFromVTurn(v, turn, maxSpeed, minSpeed, posErr + std::fabs(headingErrDeg));
+        pros::delay(loopDelayMs);
     }
 
     chassis.tank(0, 0, true);
 }
-
-// =============================
-// SINGLE PERSISTENT SE2 TASK
-// =============================
-inline pros::Task*       SE2Task   = nullptr;
-inline bool              SE2Active = false;
-inline SE2ParamsInternal SE2Cmd{};
-inline bool              SE2HasCmd = false;
 
 inline void SE2TaskFn(void*);
 
 inline void ensureSE2Task() {
     if (SE2Task == nullptr) {
         SE2Task = new pros::Task(SE2TaskFn, nullptr, "SE2");
+        if (SE2Task == nullptr) pros::lcd::print(7, "SE2 task FAIL");
     }
 }
 
 inline void cancelSE2() {
-    SE2HasCmd  = false;
-    SE2Active  = false;
+    SE2Cancel = true;
+    SE2HasCmd = false;
+    SE2Active = false;
     chassis.tank(0, 0, true);
 }
 
@@ -895,82 +865,635 @@ inline void SE2TaskFn(void*) {
                 SE2Cmd.maxSpeed
             );
 
-            SE2HasCmd  = false;
-            SE2Active  = false;
+            SE2HasCmd = false;
+            SE2Active = false;
         }
+
         pros::delay(5);
     }
 }
 
-// =============================
-// PUBLIC API: SE2ToPoint / SE2ToPose
-// =============================
-inline void SE2ToPoint(double targetX, double targetY,
-                       int timeout = 2000,
-                       SE2ParamsPublic params = {})
-{
+inline void SE2ToPoint(
+    double targetX,
+    double targetY,
+    int timeout = 2000,
+    SE2ParamsPublic params = {}
+) {
     ensureSE2Task();
+    while (SE2Active || SE2HasCmd) pros::delay(5);
 
-    if (SE2Task == nullptr) {
-        _se2Core(
-            targetX, targetY,
-            false, 0.0,
-            !params.forwards,
-            timeout,
-            params.minSpeed,
-            params.maxSpeed > 0 ? params.maxSpeed : 127.0
-        );
-        return;
-    }
+    SE2Cmd = {
+        targetX,
+        targetY,
+        false,
+        0.0,
+        !params.forwards,
+        timeout,
+        params.minSpeed,
+        params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    };
 
-    while (SE2Active) pros::delay(5);
-
-    SE2Cmd.targetX         = targetX;
-    SE2Cmd.targetY         = targetY;
-    SE2Cmd.useFinalHeading = false;
-    SE2Cmd.targetThetaDeg  = 0.0;
-    SE2Cmd.backwards       = !params.forwards;
-    SE2Cmd.timeout         = timeout;
-    SE2Cmd.minSpeed        = params.minSpeed;
-    SE2Cmd.maxSpeed        = params.maxSpeed > 0 ? params.maxSpeed : 127.0;
-
+    SE2Cancel = false;
     SE2HasCmd = true;
 
-    if (!params.async)
-        while (SE2HasCmd) pros::delay(5);
+    if (!params.async) {
+        while (SE2HasCmd || SE2Active) pros::delay(5);
+    }
 }
 
-inline void SE2ToPose(double targetX, double targetY, double targetThetaDeg,
-                      int timeout = 2000,
-                      SE2ParamsPublic params = {})
-{
+inline void SE2ToPose(
+    double targetX,
+    double targetY,
+    double targetThetaDeg,
+    int timeout = 2000,
+    SE2ParamsPublic params = {}
+) {
     ensureSE2Task();
+    while (SE2Active || SE2HasCmd) pros::delay(5);
 
-    if (SE2Task == nullptr) {
-        _se2Core(
-            targetX, targetY,
-            true, targetThetaDeg,
-            !params.forwards,
-            timeout,
-            params.minSpeed,
-            params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    SE2Cmd = {
+        targetX,
+        targetY,
+        true,
+        targetThetaDeg,
+        !params.forwards,
+        timeout,
+        params.minSpeed,
+        params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    };
+
+    SE2Cancel = false;
+    SE2HasCmd = true;
+
+    if (!params.async) {
+        while (SE2HasCmd || SE2Active) pros::delay(5);
+    }
+}
+
+// ========================================================================
+// LTV
+// ========================================================================
+
+struct LTVParamsPublic {
+    bool forwards = true;
+    double minSpeed = 0;
+    double maxSpeed = 127;
+    bool async = false;
+};
+
+struct LTVParamsInternal {
+    double targetX;
+    double targetY;
+    bool useFinalHeading;
+    double targetThetaDeg;
+    bool backwards;
+    int timeout;
+    double minSpeed;
+    double maxSpeed;
+};
+
+inline pros::Task* LTVTask = nullptr;
+inline volatile bool LTVActive = false;
+inline volatile bool LTVHasCmd = false;
+inline volatile bool LTVCancel = false;
+inline LTVParamsInternal LTVCmd{};
+
+inline void _ltvCore(
+    double targetX,
+    double targetY,
+    bool useFinalHeading,
+    double targetThetaDeg,
+    bool backwards,
+    int timeout,
+    double minSpeed,
+    double maxSpeed
+) {
+    constexpr double RAD2DEG = 180.0 / M_PI;
+
+    const double posTolInches = LATERAL_SMALL_ERROR / 2.0;
+    const double thetaTolDeg = ANGULAR_SMALL_ERROR / 2.0;
+    const double finalSwitch = 7.0;
+
+    const int settleTimeMs = LATERAL_SMALL_ERROR_TIMEOUT;
+    const int loopDelayMs = 10;
+
+    uint32_t startTime = pros::millis();
+    uint32_t settleStart = 0;
+    LTVCancel = false;
+
+    while (!LTVCancel && pros::millis() - startTime < static_cast<uint32_t>(timeout)) {
+        double forwardErr = 0.0;
+        double sideErr = 0.0;
+        double headingErr = 0.0;
+        double posErr = 0.0;
+        double desiredTheta = 0.0;
+
+        _poseErrorRobotFrame(
+            targetX,
+            targetY,
+            useFinalHeading,
+            targetThetaDeg,
+            backwards,
+            finalSwitch,
+            forwardErr,
+            sideErr,
+            headingErr,
+            posErr,
+            desiredTheta
         );
+
+        double finalHeadingErrDeg = _wrapDeg(targetThetaDeg - chassis.getPose().theta);
+
+        bool posGood = posErr < posTolInches;
+        bool thetaGood = (!useFinalHeading) || std::fabs(finalHeadingErrDeg) < thetaTolDeg;
+
+        if (posGood && thetaGood) {
+            if (settleStart == 0) settleStart = pros::millis();
+            if (pros::millis() - settleStart >= static_cast<uint32_t>(settleTimeMs)) break;
+        } else {
+            settleStart = 0;
+        }
+
+        double vRef = _clampDouble(LTV_KV * posErr, 0.0, maxSpeed * 0.65);
+        if (backwards) vRef = -vRef;
+
+        double absV = std::fabs(vRef);
+        double kx = LTV_KX + LTV_V_GAIN * absV;
+        double ky = LTV_KY + LTV_V_GAIN * absV;
+        double kth = LTV_KTH + 0.004 * absV;
+
+        double headingErrDeg = headingErr * RAD2DEG;
+
+        double v = vRef + kx * forwardErr;
+        double turn = ky * sideErr + kth * headingErrDeg;
+
+        if (useFinalHeading && posErr < 3.0) {
+            v = 0.0;
+            turn = kth * finalHeadingErrDeg;
+        }
+
+        if (!backwards && v < 0.0 && posErr > 2.0) v = 0.0;
+        if (backwards && v > 0.0 && posErr > 2.0) v = 0.0;
+
+        _tankFromVTurn(v, turn, maxSpeed, minSpeed, posErr + std::fabs(headingErrDeg));
+        pros::delay(loopDelayMs);
+    }
+
+    chassis.tank(0, 0, true);
+}
+
+inline void LTVTaskFn(void*);
+
+inline void ensureLTVTask() {
+    if (LTVTask == nullptr) {
+        LTVTask = new pros::Task(LTVTaskFn, nullptr, "LTV");
+        if (LTVTask == nullptr) pros::lcd::print(7, "LTV task FAIL");
+    }
+}
+
+inline void cancelLTV() {
+    LTVCancel = true;
+    LTVHasCmd = false;
+    LTVActive = false;
+    chassis.tank(0, 0, true);
+}
+
+inline void LTVTaskFn(void*) {
+    while (true) {
+        if (LTVHasCmd) {
+            LTVActive = true;
+
+            _ltvCore(
+                LTVCmd.targetX,
+                LTVCmd.targetY,
+                LTVCmd.useFinalHeading,
+                LTVCmd.targetThetaDeg,
+                LTVCmd.backwards,
+                LTVCmd.timeout,
+                LTVCmd.minSpeed,
+                LTVCmd.maxSpeed
+            );
+
+            LTVHasCmd = false;
+            LTVActive = false;
+        }
+
+        pros::delay(5);
+    }
+}
+
+inline void LTVToPoint(
+    double targetX,
+    double targetY,
+    int timeout = 2000,
+    LTVParamsPublic params = {}
+) {
+    ensureLTVTask();
+    while (LTVActive || LTVHasCmd) pros::delay(5);
+
+    LTVCmd = {
+        targetX,
+        targetY,
+        false,
+        0.0,
+        !params.forwards,
+        timeout,
+        params.minSpeed,
+        params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    };
+
+    LTVCancel = false;
+    LTVHasCmd = true;
+
+    if (!params.async) {
+        while (LTVHasCmd || LTVActive) pros::delay(5);
+    }
+}
+
+inline void LTVToPose(
+    double targetX,
+    double targetY,
+    double targetThetaDeg,
+    int timeout = 2000,
+    LTVParamsPublic params = {}
+) {
+    ensureLTVTask();
+    while (LTVActive || LTVHasCmd) pros::delay(5);
+
+    LTVCmd = {
+        targetX,
+        targetY,
+        true,
+        targetThetaDeg,
+        !params.forwards,
+        timeout,
+        params.minSpeed,
+        params.maxSpeed > 0 ? params.maxSpeed : 127.0
+    };
+
+    LTVCancel = false;
+    LTVHasCmd = true;
+
+    if (!params.async) {
+        while (LTVHasCmd || LTVActive) pros::delay(5);
+    }
+}
+
+inline void cancelMotionControllers() {
+    cancelRamsete();
+    cancelSE2();
+    cancelLTV();
+}
+
+// ========================================================================
+// MCL DISTANCE LOCALIZATION
+// ========================================================================
+
+struct MCLParticle {
+    double x;
+    double y;
+    double thetaDeg;
+    double weight;
+};
+
+struct MCLMeasurements {
+    double front;
+    double left;
+    double right;
+    double back;
+    int count;
+};
+
+enum class MCLSensorSide {
+    FRONT,
+    LEFT,
+    RIGHT,
+    BACK
+};
+
+inline pros::Task* MCLTask = nullptr;
+inline volatile bool MCLEnabled = false;
+inline volatile bool MCLInitialized = false;
+
+inline MCLParticle MCLParticles[MCL_NUM_PARTICLES];
+inline MCLParticle MCLScratch[MCL_NUM_PARTICLES];
+
+inline lemlib::Pose MCLLastOdomPose(0, 0, 0);
+inline uint32_t MCLRandState = 0x31415926u;
+
+inline double _mclRand01() {
+    MCLRandState = 1664525u * MCLRandState + 1013904223u;
+    return static_cast<double>((MCLRandState >> 8) & 0x00FFFFFFu) / static_cast<double>(0x01000000u);
+}
+
+inline double _mclRandSigned() {
+    return 2.0 * _mclRand01() - 1.0;
+}
+
+inline double _mclReadInches(pros::Distance& sensor) {
+    double inches = static_cast<double>(sensor.get()) / 25.4;
+
+    if (!std::isfinite(inches)) return -1.0;
+    if (inches < MCL_MIN_SENSOR_IN || inches > MCL_MAX_SENSOR_IN) return -1.0;
+
+    return inches;
+}
+
+inline MCLMeasurements _mclReadMeasurements() {
+    MCLMeasurements m{};
+
+    m.front = _mclReadInches(distance_sensor_front);
+    m.left = _mclReadInches(distance_sensor_left);
+    m.right = _mclReadInches(distance_sensor_right);
+    m.back = _mclReadInches(distance_sensor_back);
+
+    m.count = 0;
+    if (m.front > 0) m.count++;
+    if (m.left > 0) m.count++;
+    if (m.right > 0) m.count++;
+    if (m.back > 0) m.count++;
+
+    return m;
+}
+
+inline void _mclSensorVector(
+    MCLSensorSide side,
+    double thetaDeg,
+    double& dirX,
+    double& dirY,
+    double& offset
+) {
+    double t = thetaDeg * M_PI / 180.0;
+    double s = std::sin(t);
+    double c = std::cos(t);
+
+    switch (side) {
+        case MCLSensorSide::FRONT:
+            dirX = s;
+            dirY = c;
+            offset = MCL_FRONT_OFFSET;
+            break;
+
+        case MCLSensorSide::BACK:
+            dirX = -s;
+            dirY = -c;
+            offset = MCL_BACK_OFFSET;
+            break;
+
+        case MCLSensorSide::LEFT:
+            dirX = -c;
+            dirY = s;
+            offset = MCL_LEFT_OFFSET;
+            break;
+
+        case MCLSensorSide::RIGHT:
+        default:
+            dirX = c;
+            dirY = -s;
+            offset = MCL_RIGHT_OFFSET;
+            break;
+    }
+}
+
+inline double _mclRayToWall(double sx, double sy, double dirX, double dirY) {
+    constexpr double FIELD = MCL_FIELD_HALF_SIZE;
+    double best = 1e9;
+
+    if (std::fabs(dirX) > 1e-9) {
+        double t = (FIELD - sx) / dirX;
+        double y = sy + t * dirY;
+        if (t > 0 && y >= -FIELD && y <= FIELD) best = std::min(best, t);
+
+        t = (-FIELD - sx) / dirX;
+        y = sy + t * dirY;
+        if (t > 0 && y >= -FIELD && y <= FIELD) best = std::min(best, t);
+    }
+
+    if (std::fabs(dirY) > 1e-9) {
+        double t = (FIELD - sy) / dirY;
+        double x = sx + t * dirX;
+        if (t > 0 && x >= -FIELD && x <= FIELD) best = std::min(best, t);
+
+        t = (-FIELD - sy) / dirY;
+        x = sx + t * dirX;
+        if (t > 0 && x >= -FIELD && x <= FIELD) best = std::min(best, t);
+    }
+
+    return best < 1e8 ? best : -1.0;
+}
+
+inline double _mclExpectedDistance(const MCLParticle& p, MCLSensorSide side) {
+    double dirX = 0.0;
+    double dirY = 0.0;
+    double offset = 0.0;
+
+    _mclSensorVector(side, p.thetaDeg, dirX, dirY, offset);
+
+    double sx = p.x + dirX * offset;
+    double sy = p.y + dirY * offset;
+
+    return _mclRayToWall(sx, sy, dirX, dirY);
+}
+
+inline void _mclAddSensorError(double measured, double expected, double& errSq, int& used) {
+    if (measured <= 0.0 || expected <= 0.0) return;
+
+    double err = measured - expected;
+    errSq += (err * err) / (MCL_SENSOR_SIGMA * MCL_SENSOR_SIGMA);
+    used++;
+}
+
+inline double _mclParticleWeight(const MCLParticle& p, const MCLMeasurements& m) {
+    double errSq = 0.0;
+    int used = 0;
+
+    _mclAddSensorError(m.front, _mclExpectedDistance(p, MCLSensorSide::FRONT), errSq, used);
+    _mclAddSensorError(m.left, _mclExpectedDistance(p, MCLSensorSide::LEFT), errSq, used);
+    _mclAddSensorError(m.right, _mclExpectedDistance(p, MCLSensorSide::RIGHT), errSq, used);
+    _mclAddSensorError(m.back, _mclExpectedDistance(p, MCLSensorSide::BACK), errSq, used);
+
+    if (used < MCL_MIN_VALID_SENSORS) return 1.0;
+
+    return std::exp(-0.5 * errSq);
+}
+
+inline void resetMCLParticlesAroundCurrentPose() {
+    lemlib::Pose p = chassis.getPose();
+
+    MCLRandState ^= pros::millis() + 0x9E3779B9u;
+
+    for (int i = 0; i < MCL_NUM_PARTICLES; i++) {
+        MCLParticles[i].x = p.x + _mclRandSigned() * MCL_INIT_XY_NOISE;
+        MCLParticles[i].y = p.y + _mclRandSigned() * MCL_INIT_XY_NOISE;
+        MCLParticles[i].thetaDeg = _wrapDeg(p.theta + _mclRandSigned() * MCL_INIT_THETA_NOISE);
+        MCLParticles[i].weight = 1.0 / static_cast<double>(MCL_NUM_PARTICLES);
+    }
+
+    MCLLastOdomPose = p;
+    MCLInitialized = true;
+}
+
+inline lemlib::Pose _mclEstimatePose() {
+    double x = 0.0;
+    double y = 0.0;
+    double sinSum = 0.0;
+    double cosSum = 0.0;
+
+    for (int i = 0; i < MCL_NUM_PARTICLES; i++) {
+        double w = MCLParticles[i].weight;
+
+        x += MCLParticles[i].x * w;
+        y += MCLParticles[i].y * w;
+
+        double t = MCLParticles[i].thetaDeg * M_PI / 180.0;
+        sinSum += std::sin(t) * w;
+        cosSum += std::cos(t) * w;
+    }
+
+    double theta = std::atan2(sinSum, cosSum) * 180.0 / M_PI;
+
+    return lemlib::Pose(
+        static_cast<float>(x),
+        static_cast<float>(y),
+        static_cast<float>(_wrapDeg(theta))
+    );
+}
+
+inline void _mclNormalizeWeights() {
+    double sum = 0.0;
+
+    for (int i = 0; i < MCL_NUM_PARTICLES; i++) {
+        sum += MCLParticles[i].weight;
+    }
+
+    if (sum <= 1e-12 || !std::isfinite(sum)) {
+        for (int i = 0; i < MCL_NUM_PARTICLES; i++) {
+            MCLParticles[i].weight = 1.0 / static_cast<double>(MCL_NUM_PARTICLES);
+        }
         return;
     }
 
-    while (SE2Active) pros::delay(5);
+    for (int i = 0; i < MCL_NUM_PARTICLES; i++) {
+        MCLParticles[i].weight /= sum;
+    }
+}
 
-    SE2Cmd.targetX         = targetX;
-    SE2Cmd.targetY         = targetY;
-    SE2Cmd.useFinalHeading = true;
-    SE2Cmd.targetThetaDeg  = targetThetaDeg;
-    SE2Cmd.backwards       = !params.forwards;
-    SE2Cmd.timeout         = timeout;
-    SE2Cmd.minSpeed        = params.minSpeed;
-    SE2Cmd.maxSpeed        = params.maxSpeed > 0 ? params.maxSpeed : 127.0;
+inline void _mclResample() {
+    double step = 1.0 / static_cast<double>(MCL_NUM_PARTICLES);
+    double r = _mclRand01() * step;
+    double c = MCLParticles[0].weight;
 
-    SE2HasCmd = true;
+    int i = 0;
 
-    if (!params.async)
-        while (SE2HasCmd) pros::delay(5);
+    for (int m = 0; m < MCL_NUM_PARTICLES; m++) {
+        double u = r + m * step;
+
+        while (u > c && i < MCL_NUM_PARTICLES - 1) {
+            i++;
+            c += MCLParticles[i].weight;
+        }
+
+        MCLScratch[m] = MCLParticles[i];
+        MCLScratch[m].weight = step;
+    }
+
+    for (int m = 0; m < MCL_NUM_PARTICLES; m++) {
+        MCLParticles[m] = MCLScratch[m];
+    }
+}
+
+inline bool mclLocalizeOnce() {
+    if (!MCLInitialized) {
+        resetMCLParticlesAroundCurrentPose();
+    }
+
+    MCLMeasurements meas = _mclReadMeasurements();
+
+    if (meas.count < MCL_MIN_VALID_SENSORS) {
+        MCLLastOdomPose = chassis.getPose();
+        return false;
+    }
+
+    lemlib::Pose odom = chassis.getPose();
+
+    double dx = odom.x - MCLLastOdomPose.x;
+    double dy = odom.y - MCLLastOdomPose.y;
+    double dTheta = _wrapDeg(odom.theta - MCLLastOdomPose.theta);
+
+    for (int i = 0; i < MCL_NUM_PARTICLES; i++) {
+        MCLParticles[i].x += dx + _mclRandSigned() * MCL_PROCESS_XY_NOISE;
+        MCLParticles[i].y += dy + _mclRandSigned() * MCL_PROCESS_XY_NOISE;
+        MCLParticles[i].thetaDeg = _wrapDeg(
+            MCLParticles[i].thetaDeg + dTheta + _mclRandSigned() * MCL_PROCESS_THETA_NOISE
+        );
+
+        MCLParticles[i].weight = _mclParticleWeight(MCLParticles[i], meas);
+    }
+
+    _mclNormalizeWeights();
+
+    lemlib::Pose estimate = _mclEstimatePose();
+
+    _mclResample();
+
+    double a = _clampDouble(MCL_POSE_BLEND, 0.0, 1.0);
+
+    double correctedX = odom.x + a * (estimate.x - odom.x);
+    double correctedY = odom.y + a * (estimate.y - odom.y);
+
+#if MCL_CORRECT_HEADING
+    double correctedTheta = _angleMeanDeg(odom.theta, estimate.theta, a);
+#else
+    double correctedTheta = odom.theta;
+#endif
+
+    chassis.setPose(
+        static_cast<float>(correctedX),
+        static_cast<float>(correctedY),
+        static_cast<float>(correctedTheta)
+    );
+
+    MCLLastOdomPose = chassis.getPose();
+
+    return true;
+}
+
+inline void MCLTaskFn(void*) {
+    while (true) {
+        if (MCLEnabled) {
+            mclLocalizeOnce();
+        }
+
+        pros::delay(MCL_TASK_DELAY_MS);
+    }
+}
+
+inline void ensureMCLTask() {
+    if (MCLTask == nullptr) {
+        MCLTask = new pros::Task(MCLTaskFn, nullptr, "MCL");
+        if (MCLTask == nullptr) pros::lcd::print(7, "MCL task FAIL");
+    }
+}
+
+inline void startMCL(bool resetParticles = true) {
+    ensureMCLTask();
+
+    if (resetParticles || !MCLInitialized) {
+        resetMCLParticlesAroundCurrentPose();
+    }
+
+    MCLEnabled = true;
+}
+
+inline void stopMCL() {
+    MCLEnabled = false;
+    chassis.tank(0, 0, true);
+}
+
+inline void setMCL(bool enabled) {
+    if (enabled) {
+        startMCL(true);
+    } else {
+        stopMCL();
+    }
 }

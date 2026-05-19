@@ -73,6 +73,7 @@ extern pros::Motor topStage;
 extern pros::Distance distance_sensor_left;
 extern pros::Distance distance_sensor_right;
 extern pros::Distance distance_sensor_back;
+extern pros::Distance distance_sensor_front;
 extern pros::Optical color_sensor_hood;
 extern pros::Rotation horizontalEnc;
 extern pros::Rotation verticalEnc;
