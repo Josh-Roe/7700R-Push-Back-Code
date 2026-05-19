@@ -19,3 +19,5 @@ Furthermore, this program is equipped with a complex intake system that uses a t
 Work-in-progress algorithms that never made it to the competition field:
 - Monte-Carlo Localization (MCL)
 - Model Predictive Control (MPC)
+
+This project also has an autonomous selector that was made using the LVGL library. This autonomous selector contained a list of autonomous functions, a button to select the autonomous, and a section to display the robot's pose.
