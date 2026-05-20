@@ -160,14 +160,14 @@ inline void pidTurnToAngle(double targetDeg) {
     constexpr double DT         = LOOP_MS / 1000.0;
 
     // Hard safety timeout so we don't spin forever
-    constexpr int MAX_TIME_MS = 9000; // 11 seconds for 720°
+    constexpr int MAX_TIME_MS = 9000; // 9 seconds for 720°
     int elapsedMs = 0;
 
     double error      = 0;
     double lastError  = 0;
     double integral   = 0;
 
-    // optional: zero pose for this turn (odom, not IMU)
+    // zero pose for this turn (odom, not IMU)
     chassis.setPose(0, 0, 0);
 
     while (true) {
@@ -186,7 +186,7 @@ inline void pidTurnToAngle(double targetDeg) {
         }
 
         integral += error;
-        // (optional) anti-windup:
+        // anti-windup:
         if (integral > 5000)  integral = 5000;
         if (integral < -5000) integral = -5000;
 
@@ -267,7 +267,7 @@ inline bool runOdomCalibrationTrial(double targetDeg,
         return false;
     }
 
-    // --- compute geometry for THIS trial ---
+    // --- compute geometry for trial ---
     double VO = vIn / dThetaRad;                 // vertical offset
     double HO = hIn / dThetaRad;                 // horizontal offset
     double TW = (std::fabs(leftIn) + std::fabs(rightIn)) / std::fabs(dThetaRad);
@@ -306,12 +306,12 @@ inline bool near(float a, float target, float tolDeg = 3.0f) {
 }
 
 inline void distanceResetGoal() {
-    // Field walls in your coordinate system
+    // Field walls in coordinate system
     constexpr float X_WALL_POS =  72.0f; // right wall
     constexpr float X_WALL_NEG = -72.0f; // left wall
     constexpr float Y_WALL_POS =  72.0f; // top wall
 
-    // Your physical offsets (inches) — keep these the same ones you tuned
+    // physical offsets (inches) — keep same
     // xOffset affects X computed from FRONT sensor
     // yOffset affects Y computed from LEFT/RIGHT sensor
     const float xOffset = 0.5f;
@@ -326,7 +326,7 @@ inline void distanceResetGoal() {
 
     auto pose = chassis.getPose();
 
-    // Optional sanity check
+    // sanity check
     if (!(fabsf(pose.x) <= 80 && fabsf(pose.y) <= 80)) return;
 
     // ---------------- θ ≈ +90 : ( +29, ±48, +90 ) ----------------
@@ -339,7 +339,7 @@ inline void distanceResetGoal() {
         return;
     }
 
-    // ---------------- θ ≈ -90 : ( -29, ±48, -90 ) ----------------
+    // ---------------- θ = -90 : ( -29, +-8, -90 ) ----------------
     // front -> left wall (x=-72)
     // right -> top wall  (y=+72)
     if (near(theta, -90.0f)) {
@@ -349,7 +349,6 @@ inline void distanceResetGoal() {
         return;
     }
 
-    // If you ever get here, you're not in one of your allowed headings.
 }
 
 
@@ -357,7 +356,7 @@ inline void distanceResetGoal() {
 
 inline void calibrateOdomGeometry() {
     constexpr double TARGET_ROTATION_DEG = 720.0;  // two full spins
-    constexpr int    NUM_TRIALS          = 4;      // e.g. +720, -720, +720, -720
+    constexpr int    NUM_TRIALS          = 4;      // ex. +720, -720, +720, -720
 
     // Full IMU reset ONCE and wait for calibration
     imu.reset();
@@ -439,9 +438,8 @@ inline double _angleMeanDeg(double aDeg, double bDeg, double alpha) {
     return _wrapDeg(aDeg + alpha * _wrapDeg(bDeg - aDeg));
 }
 
-// LemLib convention in your code:
 // 0 deg = +Y, +90 deg = +X.
-// Positive turn should increase heading, so:
+// Positive turn should increase heading:
 // left = forward + turn, right = forward - turn.
 inline void _tankFromVTurn(double v, double turn, double maxSpeed, double minSpeed, double errorForMinSpeed) {
     maxSpeed = _clampDouble(maxSpeed, 1.0, 127.0);

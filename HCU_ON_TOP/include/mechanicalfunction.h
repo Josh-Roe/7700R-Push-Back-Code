@@ -410,7 +410,6 @@ if (requestedMode == ScoringMode::TOP) {
   }
 }
 
-// Call this ONCE from initialize() or at the start of opcontrol()
 inline void start_scoring_task() {
   static pros::Task scoringTask(scoring_task, nullptr, "Scoring Task");
 }

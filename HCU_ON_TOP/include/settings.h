@@ -61,7 +61,6 @@ AUTONOMOUS ROUTES
 #define LATERAL_KI 0
 #define LATERAL_KD 40
 
-////////
 #define ANGULAR_KP 3.6
 #define ANGULAR_KI 0
 #define ANGULAR_KD 20.75
