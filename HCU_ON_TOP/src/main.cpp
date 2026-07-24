@@ -27,7 +27,7 @@ pros::Distance distance_sensor_front(DISTANCE_SENSOR_FRONT);
 
 // OTHER MOTORS SET UP
 pros::Motor bottomStageFull(BOT_STAGE_FULL, pros::MotorGearset::blue,
-                     pros::v5::MotorUnits::degrees); 
+                     pros::v5::MotorUnits::degrees);
 pros::Motor bottomStageHalf(BOT_STAGE_HALF, pros::MotorGearset::green,
                        pros::v5::MotorUnits::degrees);
 pros::Motor topStage(TOP_STAGE, pros::MotorGearset::green,

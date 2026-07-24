@@ -5,11 +5,14 @@ else
 ASSET_FILES=$(wildcard static/*) $(wildcard static.lib/*)
 endif
 
+# Prevent collisions with template/demo asset names that may also exist in linked libraries.
+ASSET_FILES:=$(filter-out static/example.txt,$(ASSET_FILES))
+
 TEMPLATE_FILES+=$(wildcard static/*) $(wildcard firmware/hot-cold-asset.mk)
 
 ASSET_OBJ=$(addprefix $(BINDIR)/, $(addsuffix .o, $(ASSET_FILES)) )
 
-GETALLOBJ=$(sort $(call ASMOBJ,$1) $(call COBJ,$1) $(call CXXOBJ,$1)) $(ASSET_OBJ)
+GETALLOBJ=$(sort $(call ASMOBJ,$1) $(call COBJ,$1) $(call CXXOBJ,$1) $(ASSET_OBJ))
 
 .SECONDEXPANSION:
 $(ASSET_OBJ): $$(patsubst bin/%,%,$$(basename $$@))

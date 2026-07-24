@@ -40,7 +40,7 @@ inline void right7Auto() {
   startFixPoseTask();
     //RIGHT QUALS AUTO GOES HERE
   chassis.moveToPoint(17, 24, 1200, {.earlyExitRange = 20});
-  setScoringMode("INTAKE"); 
+  setScoringMode("INTAKE");
   pros::delay(400);
   scraper_tog();
   chassis.turnToHeading(59, 600, { .earlyExitRange = 30});
@@ -79,7 +79,7 @@ inline void fullWPAuto() {
   pros::delay(650);
   chassis.setPose({27, 46.5, chassis.getPose().theta});
   setScoringMode("OUTTAKE");
-  chassis.turnToPoint(24.5, -20, 600);                                                                                                                                                                                                                                                                                                                      
+  chassis.turnToPoint(24.5, -20, 600);
   chassis.moveToPoint(24.5, -20, 1400, {.minSpeed = 40});
   setScoringMode("INTAKE");
   pros::delay(200);

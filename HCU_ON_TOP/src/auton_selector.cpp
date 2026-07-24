@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include "settings.h"
-
+#include "liblvgl/lvgl.h"
 AutonomousSelector selector;
 
 namespace {
